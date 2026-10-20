@@ -157,26 +157,137 @@ function deviceGlyph(icon) {
 
 // ---------------------------------------------------------------- calendar
 // A small iCalendar reader: enough for "what is my next meeting". Handles
-// folded lines, UTC / floating / TZID times (TZID times are read as local
-// time), all-day events, and DAILY/WEEKLY recurrence with INTERVAL, BYDAY,
-// COUNT, UNTIL and EXDATE. Other recurrences show their first occurrence.
+// folded lines, UTC / floating / TZID times, all-day events, DAILY/WEEKLY
+// recurrence with INTERVAL, BYDAY, COUNT, UNTIL and EXDATE, and moved or
+// cancelled single instances (RECURRENCE-ID). Other recurrences show their
+// first occurrence.
+//
+// TZID times are converted with the feed's own VTIMEZONE blocks (servers
+// always send them, and Outlook's Windows names like "Central Standard
+// Time" can only be read that way). Times are kept as "wall" milliseconds
+// (the clock reading, as if it were UTC) until they are turned into real
+// instants, so a weekly meeting stays at 10:00 in its own zone across DST.
 
-function icsDate(value) {
-  var v = String(value || "").trim()
-  var m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(v)
+// "20261020T100000Z" -> { wall, utc, allDay }
+function icsWall(value) {
+  var m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(String(value || "").trim())
   if (!m) return null
-  var y = +m[1], mo = +m[2] - 1, d = +m[3]
-  if (m[4] === undefined) return { time: new Date(y, mo, d).getTime(), allDay: true }
-  var h = +m[4], mi = +m[5], se = +m[6]
-  var time = m[7] ? Date.UTC(y, mo, d, h, mi, se) : new Date(y, mo, d, h, mi, se).getTime()
-  return { time: time, allDay: false }
+  return { wall: Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)),
+           utc: !!m[7], allDay: m[4] === undefined }
+}
+
+// Kept for callers that want a plain local reading.
+function icsDate(value) {
+  var w = icsWall(value)
+  return w ? { time: toInstant(w.wall, w.utc, w.allDay, "", {}), allDay: w.allDay } : null
 }
 
 function icsUnescape(v) {
   return String(v || "").replace(/\\n/gi, " ").replace(/\\([,;\\])/g, "$1").trim()
 }
 
+// "DTSTART;TZID="Central Standard Time":..." -> Central Standard Time
+function lineTzid(head) {
+  var m = /;TZID=("?)([^;:"]*)\1/i.exec(head)
+  return m ? m[2] : ""
+}
+
 var weekdayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+
+function tzOffset(value) {
+  var m = /^([+-])(\d{2})(\d{2})(\d{2})?$/.exec(String(value || "").trim())
+  if (!m) return null
+  return (m[1] === "-" ? -1 : 1) * ((+m[2] * 60 + +m[3]) * 60 + +(m[4] || 0)) * 1000
+}
+
+// Every VTIMEZONE in the text: tzid -> { obs: [{ from, to, wall, rule }], years: {} }.
+function parseZones(lines) {
+  var zones = {}
+  var tzid = "", list = null, ob = null
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    if (line === "BEGIN:VTIMEZONE") { tzid = ""; list = []; continue }
+    if (!list) continue
+    if (line === "END:VTIMEZONE") { if (tzid && list.length) zones[tzid] = { obs: list, years: {} }; list = null; continue }
+    if (line === "BEGIN:STANDARD" || line === "BEGIN:DAYLIGHT") { ob = { from: null, to: null, wall: null, rule: null }; continue }
+    if (line === "END:STANDARD" || line === "END:DAYLIGHT") {
+      if (ob && ob.to !== null && ob.wall !== null) { if (ob.from === null) ob.from = ob.to; list.push(ob) }
+      ob = null
+      continue
+    }
+    var colon = line.indexOf(":")
+    if (colon < 0) continue
+    var name = line.substring(0, colon).split(";")[0].toUpperCase()
+    var value = line.substring(colon + 1).trim()
+    if (!ob) { if (name === "TZID") tzid = value; continue }
+    if (name === "TZOFFSETFROM") ob.from = tzOffset(value)
+    else if (name === "TZOFFSETTO") ob.to = tzOffset(value)
+    else if (name === "DTSTART") { var w = icsWall(value); if (w) ob.wall = w.wall }
+    else if (name === "RRULE") {
+      var r = { month: 0, weekday: -1, ord: 0, monthday: 0 }
+      value.split(";").forEach(function(part) {
+        var kv = part.split("="), k = String(kv[0]).toUpperCase(), v = String(kv[1] || "")
+        if (k === "BYMONTH") r.month = parseInt(v, 10) || 0
+        else if (k === "BYMONTHDAY") r.monthday = parseInt(v, 10) || 0
+        else if (k === "BYDAY") {
+          var d = /^([+-]?\d+)?(SU|MO|TU|WE|TH|FR|SA)$/.exec(v.split(",")[0])
+          if (d) { r.ord = d[1] ? parseInt(d[1], 10) : 1; r.weekday = weekdayCodes.indexOf(d[2]) }
+        }
+      })
+      if (r.month) ob.rule = r
+    }
+  }
+  return zones
+}
+
+// Day of month of the ord-th (or, negative, last) weekday; 0 if none.
+function nthWeekday(year, month, weekday, ord) {
+  var days = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (ord > 0) {
+    var d = 1 + (weekday - new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 7) % 7 + (ord - 1) * 7
+    return d <= days ? d : 0
+  }
+  var last = days - (new Date(Date.UTC(year, month - 1, days)).getUTCDay() - weekday + 7) % 7 + (ord + 1) * 7
+  return last >= 1 ? last : 0
+}
+
+// The zone's UTC offset at a wall time, or null when it can't tell.
+function zoneOffset(zone, wall) {
+  var year = new Date(wall).getUTCFullYear()
+  var tr = zone.years[year]
+  if (!tr) {
+    tr = []
+    zone.obs.forEach(function(ob) {
+      var w = new Date(ob.wall)
+      if (!ob.rule) { tr.push({ at: ob.wall, from: ob.from, to: ob.to }); return }
+      for (var y = year - 1; y <= year + 1; y++) {
+        if (y < w.getUTCFullYear()) continue
+        var r = ob.rule
+        var d = r.monthday ? Math.min(r.monthday, new Date(Date.UTC(y, r.month, 0)).getUTCDate())
+                           : nthWeekday(y, r.month, r.weekday, r.ord)
+        if (d) tr.push({ at: Date.UTC(y, r.month - 1, d, w.getUTCHours(), w.getUTCMinutes(), w.getUTCSeconds()),
+                         from: ob.from, to: ob.to })
+      }
+    })
+    tr.sort(function(a, b) { return a.at - b.at })
+    zone.years[year] = tr
+  }
+  if (!tr.length) return null
+  var off = tr[0].from
+  for (var i = 0; i < tr.length && wall >= tr[i].at; i++) off = tr[i].to
+  return off
+}
+
+// Wall time -> real instant. Floating times, all-day dates and zones the
+// feed doesn't define are read as local time.
+function toInstant(wall, utc, allDay, tzid, zones) {
+  if (utc) return wall
+  var zone = !allDay && tzid ? zones[tzid] : null
+  if (zone) { var off = zoneOffset(zone, wall); if (off !== null) return wall - off }
+  var d = new Date(wall)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+                  d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()).getTime()
+}
 
 function occurrence(ev, start, duration) {
   return { title: ev.title, start: start, end: start + duration, allDay: ev.allDay, url: ev.url, location: ev.location }
@@ -189,7 +300,8 @@ function firstLink(text) {
   return m ? m[0] : ""
 }
 
-function expandEvent(ev, from, to) {
+// `skip` holds the instants (and moved instances) to leave out.
+function expandEvent(ev, from, to, zones, skip) {
   var out = []
   if (!ev.rrule) {
     if (ev.end > from && ev.start < to) out.push(ev)
@@ -202,21 +314,28 @@ function expandEvent(ev, from, to) {
   })
   var freq = rule.FREQ
   var interval = Math.max(1, parseInt(rule.INTERVAL || "1", 10))
-  var until = rule.UNTIL ? (icsDate(rule.UNTIL) || {}).time : Infinity
+  var until = Infinity
+  if (rule.UNTIL) {
+    var u = icsWall(rule.UNTIL)
+    if (u) until = toInstant(u.wall, u.utc, u.allDay, ev.tzid, zones) + (u.allDay && !ev.allDay ? 86400000 - 1 : 0)
+  }
   var count = rule.COUNT ? parseInt(rule.COUNT, 10) : Infinity
   var duration = ev.end - ev.start
-  var first = new Date(ev.start)
+  var f = new Date(ev.wall)
+  var fy = f.getUTCFullYear(), fm = f.getUTCMonth(), fd = f.getUTCDate()
+  function wallAt(y, mo, d) { return Date.UTC(y, mo, d, f.getUTCHours(), f.getUTCMinutes(), f.getUTCSeconds()) }
+  function instant(w) { return toInstant(w, ev.utc, ev.allDay, ev.tzid, zones) }
+  function skipped(t) { return ev.exdates.indexOf(t) !== -1 || skip[ev.uid + "@" + t] }
   if (freq === "MONTHLY" || freq === "YEARLY") {
     // Same date every month / year (the common cases: rent, birthdays).
     var step = freq === "MONTHLY" ? interval : interval * 12
     for (var k = 0, made = 0; k < 2400 && made < count; k++) {
-      var occ = new Date(first.getFullYear(), first.getMonth() + k * step, first.getDate(),
-                         first.getHours(), first.getMinutes(), first.getSeconds())
-      if (occ.getDate() !== first.getDate()) continue
-      var ot = occ.getTime()
+      var ow = wallAt(fy, fm + k * step, fd)
+      if (new Date(ow).getUTCDate() !== fd) continue
+      var ot = instant(ow)
       if (ot > until || ot > to) break
       made += 1
-      if (ev.exdates.indexOf(ot) !== -1) continue
+      if (skipped(ot)) continue
       if (ot + duration > from) out.push(occurrence(ev, ot, duration))
     }
     return out
@@ -228,20 +347,19 @@ function expandEvent(ev, from, to) {
   var days = freq === "WEEKLY" && rule.BYDAY
     ? rule.BYDAY.split(",").map(function(d) { return weekdayCodes.indexOf(d.replace(/^[+-]?\d+/, "")) })
         .filter(function(d) { return d >= 0 })
-    : [first.getDay()]
+    : [f.getUTCDay()]
   var n = 0
   // Walk day by day (bounded): cheap for a week-ahead window.
   for (var i = 0; i < 3700 && n < count; i++) {
-    var day = new Date(first.getFullYear(), first.getMonth(), first.getDate() + i,
-                       first.getHours(), first.getMinutes(), first.getSeconds())
-    var t = day.getTime()
+    var w = wallAt(fy, fm, fd + i)
+    var t = instant(w)
     if (t > until || t > to) break
     var weeks = Math.floor(i / 7)
     var ok = freq === "DAILY" ? i % interval === 0
-      : (weeks % interval === 0 && days.indexOf(day.getDay()) !== -1)
+      : (weeks % interval === 0 && days.indexOf(new Date(w).getUTCDay()) !== -1)
     if (!ok) continue
     n += 1
-    if (ev.exdates.indexOf(t) !== -1) continue
+    if (skipped(t)) continue
     if (t + duration > from) out.push(occurrence(ev, t, duration))
   }
   return out
@@ -251,16 +369,26 @@ function expandEvent(ev, from, to) {
 // asked for (the month view wants them, "next meeting" does not).
 function parseIcs(text, from, to, includeAllDay) {
   var lines = String(text || "").replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/)
-  var events = []
+  var zones = parseZones(lines)
+  var parsed = []
+  // uid@instant of every instance a RECURRENCE-ID entry replaces or cancels.
+  var skip = {}
   var ev = null
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i]
-    if (line === "BEGIN:VEVENT") { ev = { title: "", start: 0, end: 0, allDay: false, rrule: "", exdates: [], cancelled: false, url: "", location: "", description: "" }; continue }
+    if (line === "BEGIN:VEVENT") {
+      ev = { title: "", uid: "", start: 0, end: 0, wall: 0, utc: false, tzid: "", allDay: false, rrule: "",
+             exdates: [], recurrenceId: null, cancelled: false, url: "", location: "", description: "" }
+      continue
+    }
     if (line === "END:VEVENT") {
+      if (ev && ev.recurrenceId !== null) skip[ev.uid + "@" + ev.recurrenceId] = true
       if (ev && ev.start && !ev.cancelled) {
         if (!ev.end) ev.end = ev.start + (ev.allDay ? 86400000 : 3600000)
         if (!ev.url) ev.url = firstLink(ev.location) || firstLink(ev.description)
-        events = events.concat(expandEvent(ev, from, to))
+        // A moved instance stands on its own; it never repeats.
+        if (ev.recurrenceId !== null) ev.rrule = ""
+        parsed.push(ev)
       }
       ev = null
       continue
@@ -268,19 +396,36 @@ function parseIcs(text, from, to, includeAllDay) {
     if (!ev) continue
     var colon = line.indexOf(":")
     if (colon < 0) continue
-    var name = line.substring(0, colon).split(";")[0].toUpperCase()
+    var head = line.substring(0, colon)
+    var name = head.split(";")[0].toUpperCase()
     var value = line.substring(colon + 1)
     if (name === "SUMMARY") ev.title = icsUnescape(value)
-    else if (name === "DTSTART") { var ds = icsDate(value); if (ds) { ev.start = ds.time; ev.allDay = ds.allDay } }
-    else if (name === "DTEND") { var de = icsDate(value); if (de) ev.end = de.time }
+    else if (name === "UID") ev.uid = value.trim()
+    else if (name === "DTSTART") {
+      var ds = icsWall(value)
+      if (ds) {
+        ev.wall = ds.wall; ev.utc = ds.utc; ev.allDay = ds.allDay; ev.tzid = lineTzid(head)
+        ev.start = toInstant(ds.wall, ds.utc, ds.allDay, ev.tzid, zones)
+      }
+    }
+    else if (name === "DTEND") { var de = icsWall(value); if (de) ev.end = toInstant(de.wall, de.utc, de.allDay, lineTzid(head), zones) }
+    else if (name === "RECURRENCE-ID") {
+      var dr = icsWall(value)
+      if (dr) ev.recurrenceId = toInstant(dr.wall, dr.utc, dr.allDay, lineTzid(head), zones)
+    }
     else if (name === "RRULE") ev.rrule = value
     else if (name === "URL") ev.url = value.trim()
     else if (name === "LOCATION") ev.location = icsUnescape(value)
     else if (name === "DESCRIPTION") ev.description = icsUnescape(value)
     else if (name === "X-GOOGLE-CONFERENCE") ev.url = ev.url || value.trim()
-    else if (name === "EXDATE") value.split(",").forEach(function(v) { var x = icsDate(v); if (x) ev.exdates.push(x.time) })
+    else if (name === "EXDATE") {
+      var xz = lineTzid(head)
+      value.split(",").forEach(function(v) { var x = icsWall(v); if (x) ev.exdates.push(toInstant(x.wall, x.utc, x.allDay, xz, zones)) })
+    }
     else if (name === "STATUS" && value.toUpperCase() === "CANCELLED") ev.cancelled = true
   }
+  var events = []
+  for (var j = 0; j < parsed.length; j++) events = events.concat(expandEvent(parsed[j], from, to, zones, skip))
   return events.filter(function(e) { return includeAllDay || !e.allDay })
     .sort(function(a, b) { return a.start - b.start })
 }

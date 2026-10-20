@@ -178,19 +178,49 @@ Item {
   // Everything read is capped, since the shell holds it in memory: 4 MiB a
   // source (a busy calendar is a few hundred KiB), local paths must be
   // regular files, and the whole output stops at 16 MiB.
+  // A feed over 4 MiB (years of history) is downloaded up to 64 MiB and
+  // trimmed by windowAwk to this month and the next, so it still shows.
+  // (Passed as an argument: the plugin loader doesn't give a usable file
+  // path for a sibling file.) Everything outside VEVENT (header, VTIMEZONE)
+  // is kept, and so is every recurring event still running in the window,
+  // since its first DTSTART can be years back.
+  readonly property string windowAwk: [
+    'function day(l) { sub(/\\r$/, "", l); sub(/^[^:]*:/, "", l); return substr(l, 1, 8) }',
+    '/^BEGIN:VEVENT/ { inev = 1; buf = $0 "\\n"; start = ""; end = ""; rid = ""; rrule = 0; until = ""; next }',
+    'inev {',
+    '  buf = buf $0 "\\n"',
+    '  if ($0 ~ /^DTSTART[;:]/) start = day($0)',
+    '  else if ($0 ~ /^DTEND[;:]/) end = day($0)',
+    '  else if ($0 ~ /^RECURRENCE-ID[;:]/) rid = day($0)',
+    '  else if ($0 ~ /^RRULE:/) { rrule = 1; if (match($0, /UNTIL=[0-9]+/)) until = substr($0, RSTART + 6, 8) }',
+    '  if ($0 ~ /^END:VEVENT/) {',
+    '    inev = 0; if (end == "") end = start; keep = 0',
+    '    if (rrule) keep = (until == "" || until >= from) && start <= to',
+    '    else if (start != "" && start <= to && end >= from) keep = 1',
+    '    else if (rid != "" && rid >= from && rid <= to) keep = 1',
+    '    if (keep) printf "%s", buf',
+    '  }',
+    '  next',
+    '}',
+    '{ print }'
+  ].join("\n")
   readonly property string fetchScript:
-    'max=4194304; { i=0; for u in "$@"; do s="${u/#\\~/$HOME}"; t=$(mktemp); h=$(mktemp); st=ok; ' +
+    'awkp="$1"; shift; max=4194304; big=67108864; ' +
+    'm0=$(date +%Y-%m-01); wf=$(date -d "$m0 -7 days" +%Y%m%d); wt=$(date -d "$m0 +2 months +14 days" +%Y%m%d); ' +
+    'trim() { if [ "$(wc -c < "$1")" -gt "$max" ]; then awk -v from="$wf" -v to="$wt" "$awkp" "$1" > "$1.w" && mv "$1.w" "$1"; fi; }; ' +
+    '{ i=0; for u in "$@"; do s="${u/#\\~/$HOME}"; t=$(mktemp); h=$(mktemp); st=ok; ' +
     'case "$s" in webcal://*) s="https://${s#webcal://}" ;; esac; ' +
     'case "$s" in ' +
-    'http://*|https://*) curl -sL --max-time 20 --max-filesize "$max" -D "$h" -o - "$s" 2>/dev/null ' +
-    '    | head -c $((max + 1)) > "$t"; rc=${PIPESTATUS[0]}; ' +
+    'http://*|https://*) curl -sL --max-time 60 --max-filesize "$big" -D "$h" -o - "$s" 2>/dev/null ' +
+    '    | head -c $((big + 1)) > "$t"; rc=${PIPESTATUS[0]}; ' +
     '  code=$(awk \'/^HTTP\\//{c=$2} END{print c+0}\' "$h"); ' +
-    '  if [ "$rc" = 63 ] || [ "$(wc -c < "$t")" -gt "$max" ]; then st="too large"; ' +
+    '  if [ "$rc" = 63 ] || [ "$(wc -c < "$t")" -gt "$big" ]; then st="too large"; ' +
     '  elif [ "$code" = 0 ]; then st=unreachable; elif [ "$code" != 200 ]; then st="HTTP $code"; fi ;; ' +
     '*) if [ ! -f "$s" ]; then st="file not found"; ' +
-    '  elif [ "$(wc -c < "$s")" -gt "$max" ]; then st="too large"; ' +
-    '  else head -c "$max" "$s" > "$t"; fi ;; ' +
+    '  elif [ "$(wc -c < "$s")" -gt "$big" ]; then st="too large"; ' +
+    '  else head -c "$big" "$s" > "$t"; fi ;; ' +
     'esac; ' +
+    '[ "$st" = ok ] && trim "$t" && [ "$(wc -c < "$t")" -gt "$max" ] && st="too large"; ' +
     '[ "$st" = ok ] && ! grep -q "BEGIN:VCALENDAR" "$t" && st="not a calendar"; ' +
     'echo "@@ISLAND-SOURCE $i $st"; [ "$st" = ok ] && cat "$t"; echo; rm -f "$t" "$h"; i=$((i+1)); done; } ' +
     '| head -c 16777216'
@@ -239,7 +269,7 @@ Item {
     // Set here rather than bound: a binding can lag the sources change that
     // triggered this refresh and fetch the old list.
     fetchedSources = sources.slice()
-    fetch.command = ["bash", "-c", fetchScript, "bash"].concat(fetchedSources)
+    fetch.command = ["bash", "-c", fetchScript, "bash", windowAwk].concat(fetchedSources)
     fetch.running = true
   }
 
