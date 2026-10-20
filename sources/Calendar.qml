@@ -7,6 +7,11 @@ import "../IslandModel.js" as Model
 // link works (Google "secret address in iCal format", iCloud public
 // calendar, Outlook "publish calendar", Nextcloud, Fastmail) as can local
 // .ics files. Configured with "calendars": [...] in the island's settings.
+// An entry can carry a label and colour in front of the link, the way
+// NextEvent writes them: "Work|#4285f4|https://…" (see Model.parseFeed).
+// "calendarExclude" hides events whose title contains any of its
+// comma-separated keywords, and "calendarRefreshMinutes" sets how often the
+// feeds are re-read.
 Item {
   id: calendar
 
@@ -62,6 +67,21 @@ Item {
     for (var i = 0; i < all.length; i++)
       if (all[i] && out.indexOf(all[i]) === -1) out.push(all[i])
     return out
+  }
+
+  // Each source as { entry, url, label, color, owner }; the holiday feed is
+  // labelled with its country.
+  readonly property var feeds: sources.map(function(entry, i) {
+    var f = Model.parseFeed(entry, i)
+    if (entry === holidayLink) { f.label = holidayName; f.color = "" }
+    return f
+  })
+  readonly property var exclude: Model.keywords(island ? island.setting("calendarExclude", "") : "")
+  // What every parse is told: the feeds in the order they were fetched.
+  readonly property var parseOpts: {
+    var byEntry = {}
+    feeds.forEach(function(f) { byEntry[f.entry] = f })
+    return { feeds: fetchedSources.map(function(e, i) { return byEntry[e] || Model.parseFeed(e, i) }), exclude: exclude }
   }
 
   readonly property string addedDir: Quickshell.env("HOME") + "/.config/omarchy/dynamic-island"
@@ -124,7 +144,7 @@ Item {
     version
     var from = new Date(year, monthIndex, 1).getTime() - 7 * 86400000
     var to = new Date(year, monthIndex + 1, 1).getTime() + 14 * 86400000
-    return Model.eventsByDay(Model.parseIcs(raw, from, to, true))
+    return Model.eventsByDay(Model.parseIcs(raw, from, to, true, parseOpts))
   }
 
   // The next event that has not ended yet.
@@ -139,7 +159,7 @@ Item {
     version
     var d = new Date(now)
     var from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-    var list = raw ? Model.parseIcs(raw, from, from + 86400000 - 1, true) : []
+    var list = raw ? Model.parseIcs(raw, from, from + 86400000 - 1, true, parseOpts) : []
     return list.filter(function(e) { return e.allDay }).map(function(e) { return e.title })
   }
 
@@ -250,7 +270,8 @@ Item {
         }
         calendar.status = map
         calendar.raw = text
-        calendar.events = Model.parseIcs(text, from, from + 8 * 86400000)
+        calendar.events = Model.parseIcs(text, from, from + 8 * 86400000, false, calendar.parseOpts)
+        cacheFile.setText(JSON.stringify({ sources: calendar.fetchedSources, raw: text }))
         calendar.now = Date.now()
         calendar.version++
         calendar.reportAdded()
@@ -269,7 +290,8 @@ Item {
     // Set here rather than bound: a binding can lag the sources change that
     // triggered this refresh and fetch the old list.
     fetchedSources = sources.slice()
-    fetch.command = ["bash", "-c", fetchScript, "bash", windowAwk].concat(fetchedSources)
+    fetch.command = ["bash", "-c", fetchScript, "bash", windowAwk]
+      .concat(fetchedSources.map(function(e) { return Model.parseFeed(e).url }))
     fetch.running = true
   }
 
@@ -283,7 +305,7 @@ Item {
     if (!st) return
     justAdded = ""
     if (st === "ok") {
-      var count = Model.parseIcs(raw, Date.now() - 30 * 86400000, Date.now() + 60 * 86400000, true).length
+      var count = Model.parseIcs(raw, Date.now() - 30 * 86400000, Date.now() + 60 * 86400000, true, parseOpts).length
       lastResult = { ok: true, text: "󰄬  Calendar added · " + count + (count === 1 ? " event" : " events") + " around now" }
       resultTimer.restart()
       island.showHud({ key: "calendar", layout: "label", label: "Calendar added", icon: "󰃭",
@@ -302,13 +324,47 @@ Item {
     }
   }
 
-  onSourcesChanged: refresh()
+  onSourcesChanged: { useCache(); refresh() }
 
   Timer {
-    interval: 15 * 60000
+    interval: Math.max(1, Number(calendar.island ? calendar.island.setting("calendarRefreshMinutes", 15) : 15) || 15) * 60000
     repeat: true
     running: calendar.sources.length > 0
     onTriggered: calendar.refresh()
+  }
+
+  // The last fetch, so events are there at once when the shell starts while
+  // the feeds are re-read. Holds event details, never the feed links.
+  FileView {
+    id: cacheFile
+    path: Quickshell.env("HOME") + "/.cache/omarchy-dynamic-island/calendar.json"
+    printErrors: false
+    atomicWrites: true
+    onLoaded: {
+      try { calendar.cached = JSON.parse(text() || "{}") } catch (e) {}
+      calendar.useCache()
+    }
+  }
+  property var cached: null
+
+  // Show the cached fetch until the first real one lands, but only when it
+  // came from the same feeds in the same order (the added list loads after
+  // the cache, so this is tried again as the sources settle).
+  function useCache() {
+    var c = cached
+    if (raw || !c || !c.raw || !Array.isArray(c.sources)) return
+    if (JSON.stringify(c.sources) !== JSON.stringify(sources)) return
+    cached = null
+    if (!fetch.running) fetchedSources = c.sources
+    raw = c.raw
+    var from = Date.now() - 3600000
+    events = Model.parseIcs(c.raw, from, from + 8 * 86400000, false, { feeds: c.sources.map(Model.parseFeed), exclude: exclude })
+    now = Date.now()
+    version++
+  }
+  Process {
+    running: true
+    command: ["mkdir", "-p", Quickshell.env("HOME") + "/.cache/omarchy-dynamic-island"]
   }
 
   // Demo: a meeting in eight minutes.

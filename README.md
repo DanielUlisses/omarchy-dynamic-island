@@ -140,6 +140,8 @@ apply as soon as you save the file.
 | `glow` | `false` | Soft light behind the island in the music's color |
 | `calendars` | `[]` | iCalendar links or files for the next-meeting activity, e.g. `["https://…/basic.ics", "~/cal.ics"]` |
 | `calendarLeadMinutes` | `15` | How early a meeting appears |
+| `calendarExclude` | `""` | Comma-separated keywords; matching event titles are hidden |
+| `calendarRefreshMinutes` | `15` | How often calendar feeds are re-read |
 | `holidays` | `"auto"` | Public holidays: `"auto"` (from the timezone), `"off"`, or a country code |
 | `timerSound` | `true` | Play the alarm sound when a timer ends |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
@@ -195,10 +197,28 @@ Any calendar that can give you an `.ics` link works:
 * **Outlook**: Settings → Shared calendars → Publish a calendar → ICS link
 * **Nextcloud and Fastmail**: the calendar's export or subscription link
 
-Local `.ics` files also work. Feeds are re-read every 15 minutes. Daily,
-weekly, monthly and yearly repeats (birthdays) are understood; times with a
-time zone are read as local time. The island takes keyboard input only while
-the link field is open.
+Local `.ics` files also work. Feeds are re-read every 15 minutes
+(`calendarRefreshMinutes`), and the last fetch is cached in
+`~/.cache/omarchy-dynamic-island/` so events show at once after a restart.
+Daily, weekly, monthly and yearly repeats (birthdays) are understood, times
+are converted from the event's own time zone (including Outlook's Windows
+zone names), and a moved or cancelled single meeting replaces its slot in the
+series. A feed over 4 MiB is trimmed to this month and the next.
+
+An entry can carry a label and colour in front of the link, the same format
+NextEvent uses, so its events get a coloured bar and a tag:
+
+```json
+"calendars": ["Work|#4285f4|https://…/work.ics", "Personal|https://…/personal.ics"]
+```
+
+Unlabelled feeds get a colour from a palette. The same event in two feeds is
+shown once (the first feed wins), invites you declined are hidden (the owner
+is taken from Google's secret address or the feed's calendar name), and
+`"calendarExclude": "lunch, focus time"` hides events whose title contains any
+of the keywords. Clicking an event opens its Meet, Zoom, Teams, Webex or GoTo
+link in preference to any other link it carries. The island takes keyboard
+input only while the link field is open.
 
 ## MacBook notch
 

@@ -136,7 +136,13 @@ Item {
           readonly property bool inMonth: date.getMonth() === view.monthIndex
           readonly property bool isToday: Model.dayKey(time) === Model.dayKey(Date.now())
           readonly property bool isSelected: time === view.selected
-          readonly property bool busy: !!view.days[Model.dayKey(time)]
+          readonly property var dayList: view.days[Model.dayKey(time)] || []
+          readonly property bool busy: dayList.length > 0
+          // The day's first timed event's calendar colour, if it has one.
+          readonly property string dotColor: {
+            for (var i = 0; i < dayList.length; i++) if (!dayList[i].allDay && dayList[i].color) return dayList[i].color
+            return ""
+          }
 
           width: island.s(32)
           height: island.s(26)
@@ -173,7 +179,7 @@ Item {
             width: island.s(4)
             height: width
             radius: width / 2
-            color: cell.isToday ? island.fg : island.orangeColor
+            color: cell.isToday ? island.fg : (cell.dotColor || island.orangeColor)
             opacity: cell.inMonth ? 1 : 0.4
           }
 
@@ -261,7 +267,7 @@ Item {
           width: island.s(3)
           height: parent.height - island.s(16)
           radius: width / 2
-          color: eventRow.modelData.allDay ? island.orangeColor : island.accentColor
+          color: eventRow.modelData.color || (eventRow.modelData.allDay ? island.orangeColor : island.accentColor)
         }
 
         Column {
@@ -283,8 +289,12 @@ Item {
           }
 
           Text {
-            text: eventRow.modelData.allDay ? "All day"
-              : view.timeText(eventRow.modelData.start) + " – " + view.timeText(eventRow.modelData.end)
+            width: parent.width
+            elide: Text.ElideRight
+            text: (eventRow.modelData.allDay ? "All day"
+                    : view.timeText(eventRow.modelData.start) + " – " + view.timeText(eventRow.modelData.end))
+              + (eventRow.modelData.calendar ? "  ·  " + eventRow.modelData.calendar : "")
+              + (eventRow.modelData.provider ? "  ·  " + eventRow.modelData.provider : "")
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             font.family: island.textFamily
@@ -545,13 +555,15 @@ Item {
             anchors.right: problem.visible ? problem.left : remove.left
             anchors.rightMargin: island.s(6)
             anchors.verticalCenter: parent.verticalCenter
-            text: String(source.modelData).replace(/^[a-z]+:\/\//, "").replace(/\?.*$/, "")
+            readonly property var feed: Model.parseFeed(source.modelData, view.cal.sources.indexOf(source.modelData))
+            // A labelled feed shows its label in its colour, else the link.
+            text: feed.label ? "● " + feed.label : feed.url.replace(/^[a-z]+:\/\//, "").replace(/\?.*$/, "")
+            color: feed.label ? feed.color : island.fg
             elide: Text.ElideMiddle
             textFormat: Text.PlainText
             renderType: Text.NativeRendering
             font.family: island.textFamily
             font.pixelSize: island.f(10)
-            color: island.fg
           }
 
           // What went wrong with this link on the last fetch, if anything.

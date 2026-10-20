@@ -290,14 +290,66 @@ function toInstant(wall, utc, allDay, tzid, zones) {
 }
 
 function occurrence(ev, start, duration) {
-  return { title: ev.title, start: start, end: start + duration, allDay: ev.allDay, url: ev.url, location: ev.location }
+  return { title: ev.title, uid: ev.uid, start: start, end: start + duration, allDay: ev.allDay, url: ev.url,
+           provider: ev.provider, location: ev.location, source: ev.source, calendar: ev.calendar, color: ev.color }
 }
 
-// The link worth opening for an event: its URL, else the first meeting link
-// in its location or description (Meet, Zoom, Teams all put one there).
 function firstLink(text) {
   var m = /https?:\/\/[^\s<>"'\\]+/.exec(String(text || ""))
   return m ? m[0] : ""
+}
+
+// Video meeting links, checked before any other link an event carries.
+var videoProviders = [
+  { label: "Meet", re: /https:\/\/meet\.google\.com\/[a-z0-9][a-z0-9-]*/ },
+  { label: "Zoom", re: /https?:\/\/(?:[\w-]+\.)*(?:zoom\.us|zoomgov\.com)\/(?:j|w|s|my)\/[^\s"'<>\\]+/ },
+  { label: "Teams", re: /https?:\/\/(?:teams\.microsoft\.com|teams\.live\.com|(?:[\w-]+\.)?teams\.microsoft\.us)\/(?:l\/meetup-join|l\/meeting|meet|dl\/launcher)\/[^\s"'<>\\]+/ },
+  { label: "Webex", re: /https?:\/\/(?:[\w-]+\.)*webex\.com\/(?:meet\/|join\/|[^\s"'<>]*j\.php\?)[^\s"'<>\\]+/ },
+  { label: "GoTo", re: /https?:\/\/(?:(?:meet\.goto\.com|(?:www\.)?gotomeet\.me)\/[^\s"'<>\\]+|(?:[\w-]+\.)*gotomeeting\.com\/join\/[^\s"'<>\\]+)/ }
+]
+
+// The link worth opening for an event: a video meeting link from its URL,
+// conference data, location or description (in that order), else the
+// first link of any kind. -> { url, provider }
+function meetingLink(ev) {
+  var texts = [ev.url, ev.conference, ev.location, ev.description]
+  for (var p = 0; p < videoProviders.length; p++)
+    for (var i = 0; i < texts.length; i++) {
+      var m = videoProviders[p].re.exec(String(texts[i] || ""))
+      if (m) return { url: m[0].replace(/[.,;:!?)\]]+$/, ""), provider: videoProviders[p].label }
+    }
+  return { url: ev.url || ev.conference || firstLink(ev.location) || firstLink(ev.description), provider: "" }
+}
+
+// ---- calendar feeds: an entry in "calendars" is a link, optionally with a
+// label and colour in front, as NextEvent writes them:
+// "Work|#4285f4|https://…", "Work|https://…", "#4285f4|https://…".
+var feedPalette = ["#4285f4", "#34a853", "#fbbc04", "#ea4335", "#a142f4",
+                   "#24c1e0", "#fa7b17", "#f439a0", "#5c6bc0", "#00897b"]
+
+function parseFeed(entry, index) {
+  var parts = String(entry || "").split("|")
+  var url = parts.pop().trim()
+  var label = "", color = ""
+  parts.forEach(function(p) {
+    p = p.trim()
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(p)) color = p
+    else if (p) label = p
+  })
+  // Google's secret address names whose calendar it is, which is how a
+  // declined invite is told apart from everyone else's answers.
+  var owner = ""
+  var g = /calendar\.google\.com\/calendar\/ical\/([^\/]+)\//.exec(url)
+  if (g) { try { owner = decodeURIComponent(g[1]) } catch (e) {} }
+  if (owner.indexOf("@") === -1 || /calendar\.google\.com$/.test(owner)) owner = ""
+  return { entry: String(entry || ""), url: url, label: label,
+           color: color || feedPalette[(index || 0) % feedPalette.length], owner: owner.toLowerCase() }
+}
+
+// "lunch, Focus time" or ["lunch"] -> ["lunch", "focus time"]
+function keywords(value) {
+  var list = Array.isArray(value) ? value : String(value || "").split(",")
+  return list.map(function(k) { return String(k).trim().toLowerCase() }).filter(function(k) { return k })
 }
 
 // `skip` holds the instants (and moved instances) to leave out.
@@ -367,7 +419,16 @@ function expandEvent(ev, from, to, zones, skip) {
 
 // Events overlapping [from, to), soonest first. All-day ones only when
 // asked for (the month view wants them, "next meeting" does not).
-function parseIcs(text, from, to, includeAllDay) {
+// `opts` (optional): { feeds: [parseFeed()...] in fetch order, exclude:
+// [keywords] }. The fetch's "@@ISLAND-SOURCE <i>" lines say which feed an
+// event came from; it then carries that feed's `calendar` label and
+// `color`. Invites the calendar's owner declined, titles matching an
+// exclude keyword, and the same event seen in two feeds are left out.
+function parseIcs(text, from, to, includeAllDay, opts) {
+  opts = opts || {}
+  var feeds = opts.feeds || []
+  var exclude = opts.exclude || []
+  var source = -1, owner = ""
   var lines = String(text || "").replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/)
   var zones = parseZones(lines)
   var parsed = []
@@ -376,16 +437,31 @@ function parseIcs(text, from, to, includeAllDay) {
   var ev = null
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i]
+    if (line.indexOf("@@ISLAND-SOURCE ") === 0) {
+      source = parseInt(line.substring(16), 10)
+      owner = feeds[source] ? feeds[source].owner : ""
+      continue
+    }
+    if (!ev && line.indexOf("X-WR-CALNAME:") === 0 && !(feeds[source] && feeds[source].owner)) {
+      var cn = line.substring(13).trim().toLowerCase()
+      if (/^[^\s@]+@[^\s@]+$/.test(cn)) owner = cn
+      continue
+    }
     if (line === "BEGIN:VEVENT") {
+      var feed = feeds[source]
       ev = { title: "", uid: "", start: 0, end: 0, wall: 0, utc: false, tzid: "", allDay: false, rrule: "",
-             exdates: [], recurrenceId: null, cancelled: false, url: "", location: "", description: "" }
+             exdates: [], recurrenceId: null, cancelled: false, declined: false, url: "", conference: "",
+             provider: "", location: "", description: "",
+             source: source, calendar: feed ? feed.label : "", color: feed ? feed.color : "" }
       continue
     }
     if (line === "END:VEVENT") {
       if (ev && ev.recurrenceId !== null) skip[ev.uid + "@" + ev.recurrenceId] = true
-      if (ev && ev.start && !ev.cancelled) {
+      if (ev && ev.start && !ev.cancelled && !ev.declined) {
         if (!ev.end) ev.end = ev.start + (ev.allDay ? 86400000 : 3600000)
-        if (!ev.url) ev.url = firstLink(ev.location) || firstLink(ev.description)
+        var link = meetingLink(ev)
+        ev.url = link.url
+        ev.provider = link.provider
         // A moved instance stands on its own; it never repeats.
         if (ev.recurrenceId !== null) ev.rrule = ""
         parsed.push(ev)
@@ -417,7 +493,9 @@ function parseIcs(text, from, to, includeAllDay) {
     else if (name === "URL") ev.url = value.trim()
     else if (name === "LOCATION") ev.location = icsUnescape(value)
     else if (name === "DESCRIPTION") ev.description = icsUnescape(value)
-    else if (name === "X-GOOGLE-CONFERENCE") ev.url = ev.url || value.trim()
+    else if (name === "X-GOOGLE-CONFERENCE") ev.conference = value.trim()
+    else if (name === "ATTENDEE" && owner && /PARTSTAT=DECLINED/i.test(head)
+             && value.trim().toLowerCase() === "mailto:" + owner) ev.declined = true
     else if (name === "EXDATE") {
       var xz = lineTzid(head)
       value.split(",").forEach(function(v) { var x = icsWall(v); if (x) ev.exdates.push(toInstant(x.wall, x.utc, x.allDay, xz, zones)) })
@@ -426,8 +504,19 @@ function parseIcs(text, from, to, includeAllDay) {
   }
   var events = []
   for (var j = 0; j < parsed.length; j++) events = events.concat(expandEvent(parsed[j], from, to, zones, skip))
-  return events.filter(function(e) { return includeAllDay || !e.allDay })
-    .sort(function(a, b) { return a.start - b.start })
+  var seen = {}
+  return events.filter(function(e) {
+    if (!includeAllDay && e.allDay) return false
+    var title = String(e.title || "").toLowerCase()
+    for (var k = 0; k < exclude.length; k++) if (title.indexOf(exclude[k]) !== -1) return false
+    // Shared with another feed: the first feed's copy wins.
+    if (e.uid) {
+      var key = e.uid + "@" + e.start
+      if (seen[key]) return false
+      seen[key] = true
+    }
+    return true
+  }).sort(function(a, b) { return a.start - b.start || a.source - b.source })
 }
 
 function dayKey(time) {
