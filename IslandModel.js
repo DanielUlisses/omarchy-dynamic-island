@@ -90,6 +90,13 @@ function outputsSize(count) {
   return { w: 392, h: 16 + 22 + 8 + rows * 40 + (rows - 1) * 4 + 16, r: 36 }
 }
 
+// Calendar settings: header, link field, one row per calendar (up to five,
+// then it scrolls), the exclude field and the holidays row.
+function calendarSettingsSize(feeds) {
+  var rows = Math.max(1, Math.min(5, feeds))
+  return { w: 580, h: 18 + 26 + 8 + 30 + 10 + rows * 36 + (rows - 1) * 4 + 10 + 30 + 6 + 26 + 18, r: 36 }
+}
+
 // Views that sit on the notch itself; with a measured notch they grow to
 // clear the camera cutout with room for content on both sides.
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",
@@ -99,6 +106,7 @@ function sizeFor(view, counts, notch) {
   var base
   if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
   else if (view === "outputs-expanded") base = outputsSize(counts && counts.outputs || 0)
+  else if (view === "calendar-expanded" && counts && counts.calendarSettings) base = calendarSettingsSize(counts.calendarSettings - 1)
   else base = sizes[view] || sizes["idle"]
   if (!notch || !(notch.w > 0) || compactViews.indexOf(view) === -1) return base
   var h = Math.max(base.h, notch.h > 0 ? notch.h : base.h)
@@ -291,7 +299,8 @@ function toInstant(wall, utc, allDay, tzid, zones) {
 
 function occurrence(ev, start, duration) {
   return { title: ev.title, uid: ev.uid, start: start, end: start + duration, allDay: ev.allDay, url: ev.url,
-           provider: ev.provider, location: ev.location, source: ev.source, calendar: ev.calendar, color: ev.color }
+           provider: ev.provider, location: ev.location, source: ev.source, calendar: ev.calendar, color: ev.color,
+           feedUrl: ev.feedUrl }
 }
 
 function firstLink(text) {
@@ -344,6 +353,102 @@ function parseFeed(entry, index) {
   if (owner.indexOf("@") === -1 || /calendar\.google\.com$/.test(owner)) owner = ""
   return { entry: String(entry || ""), url: url, label: label,
            color: color || feedPalette[(index || 0) % feedPalette.length], owner: owner.toLowerCase() }
+}
+
+// Rebuild an entry after its label or colour is edited.
+function feedEntry(url, label, color) {
+  var parts = []
+  if (label) parts.push(String(label).replace(/\|/g, " ").trim())
+  if (color) parts.push(color)
+  parts.push(url)
+  return parts.join("|")
+}
+
+// ---- opening links: which command opens a meeting. Settings (the same
+// ones NextEvent reads, as JSON strings or objects):
+//   launchers         { name: "command prefix" }
+//   calendarLaunchers { "Calendar label": name | { default: name, teams: name, … } }
+//   launcherRules     [{ match?, provider?, calendar?, launcher }] (first match wins)
+//   browserCommand    "command prefix"
+// plus `picks`, the profile chosen per feed link in the settings screen:
+// { feedUrl: "command prefix" }. Order: rule → the calendar's launcher for
+// the link's provider → picked profile → the calendar's default →
+// browserCommand → xdg-open (returned as "").
+
+function jsonSetting(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback
+  if (typeof value === "object") return value
+  try { return JSON.parse(String(value)) } catch (e) { return fallback }
+}
+
+function launchCommand(ev, cfg) {
+  cfg = cfg || {}
+  var launchers = jsonSetting(cfg.launchers, {})
+  var byCalendar = jsonSetting(cfg.calendarLaunchers, {})
+  var rules = jsonSetting(cfg.launcherRules, [])
+  var picks = cfg.picks || {}
+  var title = String(ev.title || "").toLowerCase()
+  var cal = String(ev.calendar || "").trim().toLowerCase()
+  var provider = String(ev.provider || "").toLowerCase()
+  function named(name) {
+    var cmd = name ? launchers[name] : ""
+    return cmd && String(cmd).trim() ? String(cmd).trim() : ""
+  }
+  if (Array.isArray(rules))
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i] || {}
+      if (!r.match && !r.provider) continue
+      if (r.match && title.indexOf(String(r.match).toLowerCase()) === -1) continue
+      if (r.provider && String(r.provider).toLowerCase() !== provider) continue
+      if (r.calendar && String(r.calendar).trim().toLowerCase() !== cal) continue
+      var hit = named(r.launcher)
+      if (hit) return hit
+    }
+  var mapping = null
+  for (var key in byCalendar) if (String(key).trim().toLowerCase() === cal && cal) mapping = byCalendar[key]
+  if (mapping && typeof mapping === "object" && provider) {
+    for (var pk in mapping) if (pk.toLowerCase() === provider && named(mapping[pk])) return named(mapping[pk])
+  }
+  if (ev.feedUrl && picks[ev.feedUrl]) return String(picks[ev.feedUrl])
+  if (mapping) {
+    var def = named(typeof mapping === "object" ? mapping["default"] : mapping)
+    if (def) return def
+  }
+  return String(cfg.browserCommand || "").trim()
+}
+
+// A link quoted for bash, appended to a launcher command.
+function shellQuote(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'"
+}
+
+// Browsers whose profiles the settings screen offers, and where each keeps
+// its profile list.
+var browsers = [
+  { id: "chrome", name: "Chrome", bin: "google-chrome-stable", dir: ".config/google-chrome" },
+  { id: "chromium", name: "Chromium", bin: "chromium", dir: ".config/chromium" },
+  { id: "brave", name: "Brave", bin: "brave", dir: ".config/BraveSoftware/Brave-Browser" },
+  { id: "edge", name: "Edge", bin: "microsoft-edge-stable", dir: ".config/microsoft-edge" },
+  { id: "vivaldi", name: "Vivaldi", bin: "vivaldi-stable", dir: ".config/vivaldi" }
+]
+
+// A browser's "Local State" JSON -> profile choices
+// [{ id, name, detail, command }], Default first.
+function browserProfiles(browser, localState) {
+  var cache = {}
+  try { cache = (JSON.parse(localState).profile || {}).info_cache || {} } catch (e) { return [] }
+  return Object.keys(cache).sort(function(a, b) {
+    return (a === "Default" ? -1 : b === "Default" ? 1 : 0) || a.localeCompare(b, undefined, { numeric: true })
+  }).map(function(dir) {
+    var p = cache[dir] || {}
+    // Chrome's made-up names ("Person 1", "Your Chrome") say less than the
+    // account signed in to it.
+    var generic = !p.name || /^(Person \d+|Your Chrome|Default)$/.test(p.name)
+    var name = generic && p.user_name ? p.user_name : (p.name || dir)
+    return { id: browser.id + ":" + dir, name: browser.name + " · " + name,
+             detail: (p.user_name && name !== p.user_name ? p.user_name + " · " : "") + dir,
+             command: browser.bin + " --profile-directory=" + shellQuote(dir) }
+  })
 }
 
 // "lunch, Focus time" or ["lunch"] -> ["lunch", "focus time"]
@@ -452,7 +557,7 @@ function parseIcs(text, from, to, includeAllDay, opts) {
       ev = { title: "", uid: "", start: 0, end: 0, wall: 0, utc: false, tzid: "", allDay: false, rrule: "",
              exdates: [], recurrenceId: null, cancelled: false, declined: false, url: "", conference: "",
              provider: "", location: "", description: "",
-             source: source, calendar: feed ? feed.label : "", color: feed ? feed.color : "" }
+             source: source, calendar: feed ? feed.label : "", color: feed ? feed.color : "", feedUrl: feed ? feed.url : "" }
       continue
     }
     if (line === "END:VEVENT") {

@@ -40,7 +40,94 @@ Item {
 
   function setHolidays(code) {
     holidayChoice = String(code || "auto")
-    prefsFile.setText(JSON.stringify({ holidays: holidayChoice }, null, 2) + "\n")
+    savePrefs()
+  }
+
+  // ---- settings made in the settings screen, kept in the island's prefs
+  // file next to the holiday choice: extra exclude keywords, and the
+  // browser profile each feed's meetings open in ({ feedUrl: choice id }).
+  property string excludeText: ""
+  property var picks: ({})
+
+  function savePrefs() {
+    prefsFile.setText(JSON.stringify({ holidays: holidayChoice, exclude: excludeText, profiles: picks }, null, 2) + "\n")
+  }
+
+  function setExclude(text) {
+    excludeText = String(text || "").trim()
+    savePrefs()
+  }
+
+  function setPick(url, id) {
+    var next = {}
+    for (var k in picks) if (k !== url) next[k] = picks[k]
+    if (id) next[url] = id
+    picks = next
+    savePrefs()
+  }
+
+  // Change a feed's label or colour: rewrite its entry where it lives.
+  function setFeed(entry, label, color) {
+    var f = Model.parseFeed(entry)
+    var next = Model.feedEntry(f.url, label, color)
+    if (next === entry) return
+    if (added.indexOf(entry) !== -1) {
+      added = added.map(function(x) { return x === entry ? next : x })
+      addedFile.setText(JSON.stringify(added, null, 2) + "\n")
+    } else if (configured.indexOf(entry) !== -1 && island) {
+      // Hand-written in shell.json: edit it there (the island reloads).
+      island.saveSettings({ calendars: configured.map(function(x) { return x === entry ? next : x }) })
+    }
+  }
+
+  // ---- browser profiles on this machine, offered per feed. Each browser's
+  // "Local State" is printed after a "@@BROWSER <id>" line.
+  property var profiles: []
+  Process {
+    id: profileScan
+    running: true
+    command: ["bash", "-c", 'for b in "$@"; do IFS="|" read -r id bin dir <<< "$b"; ' +
+      'f="$HOME/$dir/Local State"; command -v "$bin" >/dev/null && [ -f "$f" ] && { echo "@@BROWSER $id"; head -c 4194304 "$f"; echo; }; done', "bash"]
+      .concat(Model.browsers.map(function(b) { return b.id + "|" + b.bin + "|" + b.dir }))
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var out = []
+        var parts = String(text || "").split(/^@@BROWSER (\S+)\n/m)
+        for (var i = 1; i + 1 < parts.length; i += 2) {
+          var b = Model.browsers.filter(function(x) { return x.id === parts[i] })[0]
+          if (b) out = out.concat(Model.browserProfiles(b, parts[i + 1]))
+        }
+        calendar.profiles = out
+      }
+    }
+  }
+  function rescanProfiles() { if (!profileScan.running) profileScan.running = true }
+
+  // Everything a feed's meetings can open with: the browser profiles found,
+  // then the named launchers from the "launchers" setting.
+  readonly property var launchChoices: {
+    var named = Model.jsonSetting(island ? island.setting("launchers", "") : "", {})
+    var out = profiles.slice()
+    for (var n in named) out.push({ id: "launcher:" + n, name: n, detail: String(named[n]), command: String(named[n]) })
+    return out
+  }
+  function choice(id) {
+    for (var i = 0; i < launchChoices.length; i++) if (launchChoices[i].id === id) return launchChoices[i]
+    return null
+  }
+  function pickFor(url) { return choice(picks[url] || "") }
+
+  // Open an event's link with the profile/launcher that applies to it.
+  function open(ev) {
+    if (!ev || !ev.url) return
+    var cmds = {}
+    for (var u in picks) { var c = choice(picks[u]); if (c) cmds[u] = c.command }
+    var cmd = Model.launchCommand(ev, {
+      launchers: island.setting("launchers", ""), calendarLaunchers: island.setting("calendarLaunchers", ""),
+      launcherRules: island.setting("launcherRules", ""), browserCommand: island.setting("browserCommand", ""),
+      picks: cmds })
+    if (cmd) Quickshell.execDetached(["bash", "-lc", cmd + " " + Model.shellQuote(ev.url)])
+    else Quickshell.execDetached(["xdg-open", String(ev.url)])
   }
 
   // Timezone -> ISO country (Asia/Kolkata -> IN) via tzdata's zone.tab.
@@ -57,7 +144,12 @@ Item {
     printErrors: false
     atomicWrites: true
     onLoaded: {
-      try { var p = JSON.parse(text() || "{}"); if (p.holidays) calendar.holidayChoice = String(p.holidays) } catch (e) {}
+      try {
+        var p = JSON.parse(text() || "{}")
+        if (p.holidays) calendar.holidayChoice = String(p.holidays)
+        calendar.excludeText = String(p.exclude || "")
+        if (p.profiles && typeof p.profiles === "object") calendar.picks = p.profiles
+      } catch (e) {}
     }
   }
 
@@ -76,7 +168,9 @@ Item {
     if (entry === holidayLink) { f.label = holidayName; f.color = "" }
     return f
   })
+  // Keywords from shell.json's "calendarExclude" plus the settings screen's.
   readonly property var exclude: Model.keywords(island ? island.setting("calendarExclude", "") : "")
+    .concat(Model.keywords(excludeText))
   // What every parse is told: the feeds in the order they were fetched.
   readonly property var parseOpts: {
     var byEntry = {}
@@ -324,7 +418,9 @@ Item {
     }
   }
 
-  onSourcesChanged: { useCache(); refresh() }
+  // Deferred: sources is often first read lazily from inside another
+  // binding (the month view's), and writing raw/version there is a loop.
+  onSourcesChanged: Qt.callLater(function() { calendar.useCache(); calendar.refresh() })
 
   Timer {
     interval: Math.max(1, Number(calendar.island ? calendar.island.setting("calendarRefreshMinutes", 15) : 15) || 15) * 60000

@@ -790,6 +790,13 @@ Item {
     collapse()
   }
 
+  // A meeting: its link opens in the browser profile / launcher set for its
+  // calendar (see Calendar.open).
+  function openEvent(ev) {
+    calendarSource.open(ev)
+    collapse()
+  }
+
   // ------------------------------------------------------------------
   // Camera in use: any process holding a /dev/video* device open.
   // ------------------------------------------------------------------
@@ -1023,7 +1030,8 @@ Item {
     idleHidden: idleHidden,
     hovered: hovered
   })
-  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length })
+  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length,
+    calendarSettings: calendarAdding ? calendarSource.sources.filter(function(l) { return l !== calendarSource.holidayLink }).length + 1 : 0 })
   readonly property var viewSize: {
     var v = Model.sizeFor(view, viewCounts, notchSize)
     // The resting pill grows to fit what the ticker is showing, so the
@@ -1293,7 +1301,15 @@ Item {
     function endActivity(id: string, message: string): string { return activitySource.end(id, message) }
     function activities(): string { return JSON.stringify(activitySource.list()) }
     function refreshCalendar(): string { calendarSource.refresh(); return "ok" }
+    // Join the next (or current) meeting that has a link.
+    function joinNext(): string {
+      var list = root.calendar.events
+      for (var i = 0; i < list.length; i++)
+        if (list[i].url && list[i].end > Date.now()) { root.openEvent(list[i]); return list[i].title || "ok" }
+      return "no meeting"
+    }
     function calendar(): string { root.openCalendar(); return "ok" }
+    function calendarSettings(): string { root.openCalendar(); root.calendarAdding = true; return "ok" }
     function addCalendar(link: string): string { root.addCalendar(link); return "ok" }
     function removeCalendar(link: string): string { root.removeCalendar(link); return "ok" }
     function addCalendarFromClipboard(): string { root.addCalendarFromClipboard(); return "ok" }

@@ -4,8 +4,9 @@ import "../IslandModel.js" as Model
 
 // The calendar: a month on the left (today filled, the selected day ringed,
 // a dot under days with events) and the selected day's events on the right.
-// Click an event to open its meeting link. The + button (or the empty
-// state) opens a field to paste a calendar's .ics link.
+// Click an event to open its meeting link (in the browser profile set for
+// its calendar). The settings button (or the empty state) swaps the view
+// for CalendarSettings: links, labels, colours, profiles, keywords.
 Item {
   id: view
 
@@ -22,7 +23,6 @@ Item {
   readonly property var days: cal.month(year, monthIndex)
   readonly property var dayEvents: days[Model.dayKey(selected)] || []
   readonly property bool hasCalendars: cal.sources.length > 0
-  property bool pickingHolidays: false
 
   // Monday or Sunday first, whatever the locale says.
   readonly property int firstWeekday: Qt.locale().firstDayOfWeek % 7
@@ -35,11 +35,6 @@ Item {
     year = t.getFullYear()
     monthIndex = t.getMonth()
     selected = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
-    if (adding) Qt.callLater(function() { input.forceActiveFocus() })
-  }
-  onAddingChanged: {
-    pickingHolidays = false
-    if (adding && visible) Qt.callLater(function() { input.forceActiveFocus() })
   }
 
   function shiftMonth(delta) {
@@ -53,8 +48,15 @@ Item {
   }
 
   // ------------------------------------------------------------ month grid
+  CalendarSettings {
+    anchors.fill: parent
+    visible: view.adding
+    island: view.island
+  }
+
   Item {
     id: monthPane
+    visible: !view.adding
     x: view.pad
     y: view.pad
     width: island.s(7 * 32)
@@ -202,6 +204,7 @@ Item {
   // ----------------------------------------------------------- right column
   Item {
     id: side
+    visible: !view.adding
     anchors.left: monthPane.right
     anchors.leftMargin: island.s(16)
     anchors.right: parent.right
@@ -218,7 +221,7 @@ Item {
         anchors.left: parent.left
         anchors.right: addButton.left
         anchors.verticalCenter: parent.verticalCenter
-        text: view.adding ? "Calendars" : Qt.formatDate(new Date(view.selected), "dddd d")
+        text: Qt.formatDate(new Date(view.selected), "dddd d")
         elide: Text.ElideRight
         textFormat: Text.PlainText
         renderType: Text.NativeRendering
@@ -232,7 +235,7 @@ Item {
         id: addButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        glyph: view.adding ? "󰅖" : "󰐕"
+        glyph: "󰒓"
         glyphSize: island.f(13)
         color: island.fg
         fontFamily: island.fontFamily
@@ -321,7 +324,7 @@ Item {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: eventRow.modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor
-          onClicked: if (eventRow.modelData.url) island.openLink(eventRow.modelData.url)
+          onClicked: if (eventRow.modelData.url) island.openEvent(eventRow.modelData)
         }
       }
     }
@@ -332,7 +335,7 @@ Item {
       width: parent.width
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.WordWrap
-      text: view.hasCalendars ? "Nothing scheduled" : "No calendar added yet.\nTap + to add one."
+      text: view.hasCalendars ? "Nothing scheduled" : "No calendar added yet.\nTap 󰒓 to add one."
       textFormat: Text.PlainText
       renderType: Text.NativeRendering
       font.family: island.textFamily
@@ -340,275 +343,5 @@ Item {
       color: island.fgDim
     }
 
-    // Result of the last add: green when it worked, red with the reason.
-    Text {
-      visible: !!view.cal.lastResult
-      anchors.bottom: parent.bottom
-      width: parent.width
-      wrapMode: Text.WordWrap
-      maximumLineCount: 2
-      elide: Text.ElideRight
-      text: view.cal.lastResult ? view.cal.lastResult.text : ""
-      textFormat: Text.PlainText
-      renderType: Text.NativeRendering
-      font.family: island.textFamily
-      font.pixelSize: island.f(10)
-      font.weight: Font.DemiBold
-      color: view.cal.lastResult && view.cal.lastResult.ok ? island.greenColor : island.urgentColor
-    }
-
-    // --- holiday country picker
-    ListView {
-      id: countries
-      visible: view.adding && view.pickingHolidays
-      y: sideHeader.height + island.s(6)
-      width: parent.width
-      height: parent.height - y
-      clip: true
-      spacing: island.s(2)
-      boundsBehavior: Flickable.StopAtBounds
-      model: [{ code: "off", name: "No holidays" }].concat(Model.holidayCalendars)
-
-      delegate: Rectangle {
-        id: country
-        required property var modelData
-        readonly property bool chosen: (modelData.code === "off" && view.cal.holidayCountry === "")
-          || modelData.code === view.cal.holidayCountry
-        width: ListView.view.width
-        height: island.s(24)
-        radius: height / 2
-        color: chosen ? Util.alpha(island.accentColor, 0.2) : Util.alpha(island.fg, countryMouse.containsMouse ? 0.1 : 0.03)
-
-        Text {
-          anchors.left: parent.left
-          anchors.leftMargin: island.s(12)
-          anchors.verticalCenter: parent.verticalCenter
-          text: country.modelData.name + (country.modelData.code === view.cal.detectedCountry ? "  (your timezone)" : "")
-          textFormat: Text.PlainText
-          renderType: Text.NativeRendering
-          font.family: island.textFamily
-          font.pixelSize: island.f(11)
-          font.bold: country.chosen
-          color: island.fg
-        }
-
-        MouseArea {
-          id: countryMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: {
-            view.cal.setHolidays(country.modelData.code === view.cal.detectedCountry ? "auto" : country.modelData.code)
-            view.pickingHolidays = false
-          }
-        }
-      }
-    }
-
-    // --- add / remove calendars
-    Column {
-      visible: view.adding && !view.pickingHolidays
-      y: sideHeader.height + island.s(6)
-      width: parent.width
-      spacing: island.s(6)
-
-      Item {
-        width: parent.width
-        height: island.s(30)
-
-      Rectangle {
-        id: pasteButton
-        anchors.right: parent.right
-        width: pasteLabel.implicitWidth + island.s(22)
-        height: parent.height
-        radius: height / 2
-        color: Util.alpha(island.accentColor, pasteMouse.pressed ? 0.34 : (pasteMouse.containsMouse ? 0.26 : 0.18))
-
-        Text {
-          id: pasteLabel
-          anchors.centerIn: parent
-          text: "󰆒 Paste"
-          textFormat: Text.PlainText
-          renderType: Text.NativeRendering
-          font.family: island.textFamily
-          font.pixelSize: island.f(11)
-          font.weight: Font.DemiBold
-          color: island.accentColor
-        }
-
-        MouseArea {
-          id: pasteMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          // Adds the copied link directly, keyboard or not.
-          onClicked: island.addCalendarFromClipboard()
-        }
-      }
-
-      Rectangle {
-        anchors.left: parent.left
-        anchors.right: pasteButton.left
-        anchors.rightMargin: island.s(6)
-        height: parent.height
-        radius: height / 2
-        color: Util.alpha(island.fg, 0.08)
-        border.width: input.activeFocus ? 1 : 0
-        border.color: island.accentColor
-
-        TextInput {
-          id: input
-          anchors.left: parent.left
-          anchors.leftMargin: island.s(12)
-          anchors.right: parent.right
-          anchors.rightMargin: island.s(12)
-          anchors.verticalCenter: parent.verticalCenter
-          clip: true
-          font.family: island.fontFamily
-          font.pixelSize: island.f(11)
-          color: island.fg
-          selectionColor: Util.alpha(island.accentColor, 0.5)
-          renderType: Text.NativeRendering
-          selectByMouse: true
-
-          function commit() {
-            var link = text.trim()
-            if (!link) return
-            island.addCalendar(link)
-            text = ""
-            island.calendarAdding = false
-          }
-
-          Keys.onReturnPressed: commit()
-          Keys.onEnterPressed: commit()
-          Keys.onEscapePressed: island.calendarAdding = false
-
-          Text {
-            anchors.fill: parent
-            visible: input.text === ""
-            text: "Calendar link (.ics)"
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            renderType: Text.NativeRendering
-            font: input.font
-            color: island.fgDim
-          }
-        }
-
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.IBeamCursor
-          onClicked: input.forceActiveFocus()
-          // Let the TextInput handle drags/selection once focused.
-          enabled: !input.activeFocus
-        }
-      }
-      }
-
-      // Holidays: one tap to change country or turn off.
-      Rectangle {
-        width: parent.width
-        height: island.s(26)
-        radius: height / 2
-        color: Util.alpha(island.orangeColor, holidaysMouse.containsMouse ? 0.24 : 0.14)
-
-        Text {
-          anchors.left: parent.left
-          anchors.leftMargin: island.s(12)
-          anchors.right: parent.right
-          anchors.rightMargin: island.s(12)
-          anchors.verticalCenter: parent.verticalCenter
-          text: "󰃭  Holidays: " + (view.cal.holidayName || "off") + "  ›"
-          elide: Text.ElideRight
-          textFormat: Text.PlainText
-          renderType: Text.NativeRendering
-          font.family: island.textFamily
-          font.pixelSize: island.f(11)
-          font.weight: Font.DemiBold
-          color: island.orangeColor
-        }
-
-        MouseArea {
-          id: holidaysMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: view.pickingHolidays = true
-        }
-      }
-
-      // Calendars already added, each with its own ×.
-      Repeater {
-        model: view.cal.sources.filter(function(l) { return l !== view.cal.holidayLink })
-
-        Rectangle {
-          id: source
-          required property var modelData
-          width: parent.width
-          height: island.s(26)
-          radius: height / 2
-          color: Util.alpha(island.fg, 0.05)
-
-          Text {
-            anchors.left: parent.left
-            anchors.leftMargin: island.s(12)
-            anchors.right: problem.visible ? problem.left : remove.left
-            anchors.rightMargin: island.s(6)
-            anchors.verticalCenter: parent.verticalCenter
-            readonly property var feed: Model.parseFeed(source.modelData, view.cal.sources.indexOf(source.modelData))
-            // A labelled feed shows its label in its colour, else the link.
-            text: feed.label ? "● " + feed.label : feed.url.replace(/^[a-z]+:\/\//, "").replace(/\?.*$/, "")
-            color: feed.label ? feed.color : island.fg
-            elide: Text.ElideMiddle
-            textFormat: Text.PlainText
-            renderType: Text.NativeRendering
-            font.family: island.textFamily
-            font.pixelSize: island.f(10)
-          }
-
-          // What went wrong with this link on the last fetch, if anything.
-          Text {
-            id: problem
-            readonly property string st: view.cal.statusOf(source.modelData)
-            visible: st !== "" && st !== "ok"
-            anchors.right: remove.left
-            anchors.rightMargin: island.s(4)
-            anchors.verticalCenter: parent.verticalCenter
-            text: st.indexOf("HTTP ") === 0 ? st.substring(5) + " error" : st
-            textFormat: Text.PlainText
-            renderType: Text.NativeRendering
-            font.family: island.textFamily
-            font.pixelSize: island.f(10)
-            font.weight: Font.DemiBold
-            color: island.urgentColor
-          }
-
-          IconButton {
-            id: remove
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            glyph: "󰅖"
-            glyphSize: island.f(10)
-            color: island.fg
-            fontFamily: island.fontFamily
-            onClicked: island.removeCalendar(source.modelData)
-          }
-        }
-      }
-
-      Text {
-        visible: view.cal.sources.length === 0
-        width: parent.width
-        wrapMode: Text.WordWrap
-        text: "Google: Settings › your calendar › Secret address in iCal format. " +
-              "iCloud: share as public calendar. Outlook: Publish a calendar › ICS."
-        textFormat: Text.PlainText
-        renderType: Text.NativeRendering
-        font.family: island.textFamily
-        font.pixelSize: island.f(10)
-        lineHeight: 1.15
-        color: island.fgDim
-      }
-    }
   }
 }

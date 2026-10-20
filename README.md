@@ -142,6 +142,7 @@ apply as soon as you save the file.
 | `calendarLeadMinutes` | `15` | How early a meeting appears |
 | `calendarExclude` | `""` | Comma-separated keywords; matching event titles are hidden |
 | `calendarRefreshMinutes` | `15` | How often calendar feeds are re-read |
+| `launchers`, `calendarLaunchers`, `launcherRules`, `browserCommand` | | How meeting links open (see Calendar settings) |
 | `holidays` | `"auto"` | Public holidays: `"auto"` (from the timezone), `"off"`, or a country code |
 | `timerSound` | `true` | Play the alarm sound when a timer ends |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
@@ -217,8 +218,37 @@ shown once (the first feed wins), invites you declined are hidden (the owner
 is taken from Google's secret address or the feed's calendar name), and
 `"calendarExclude": "lunch, focus time"` hides events whose title contains any
 of the keywords. Clicking an event opens its Meet, Zoom, Teams, Webex or GoTo
-link in preference to any other link it carries. The island takes keyboard
-input only while the link field is open.
+link in preference to any other link it carries.
+
+### Calendar settings
+
+The 󰒓 button in the calendar (or `omarchy-shell dynamic-island calendarSettings`)
+opens the settings: paste a link, and for each calendar tap its colour to
+change it, edit its label, and pick the **browser profile** its meetings open
+in. Profiles are found automatically for Chrome, Chromium, Brave, Edge and
+Vivaldi and shown by the account signed in to them. Below that are the
+keywords to hide and the holiday calendar. All of it is kept in
+`~/.config/omarchy/dynamic-island/` (`calendars.json`, `prefs.json`). The
+island takes keyboard input only while the settings are open.
+
+`omarchy-shell dynamic-island joinNext` opens the next meeting with a link
+(bind it to a key).
+
+For more control, the island reads the same launcher settings as the
+NextEvent bar widget:
+
+```json
+"launchers": "{\"work\":\"google-chrome-stable --profile-directory='Profile 1'\",\"teams\":\"teams-for-linux\"}",
+"calendarLaunchers": "{\"Work\":{\"default\":\"work\",\"teams\":\"teams\"}}",
+"launcherRules": "[{\"match\":\"Book club\",\"launcher\":\"teams\"}]",
+"browserCommand": "firefox"
+```
+
+A link opens with the first of: a matching rule (`match` on the title,
+`provider`, `calendar` label), the calendar's launcher for that video
+provider, the profile picked in the settings, the calendar's default
+launcher, `browserCommand`, then `xdg-open`. Named launchers also appear in
+the settings' profile list.
 
 ## MacBook notch
 
