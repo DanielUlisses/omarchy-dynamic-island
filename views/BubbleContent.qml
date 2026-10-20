@@ -60,6 +60,18 @@ Item {
       : (view.kind === "activity" && island.activity ? island.toneFor(island.activity.color) : island.accentColor)
   }
 
+  // Herdr agents: the robot, in the colour of the most urgent one.
+  Text {
+    anchors.centerIn: parent
+    visible: view.kind === "agents"
+    text: "󰚩"
+    textFormat: Text.PlainText
+    renderType: Text.NativeRendering
+    font.family: island.fontFamily
+    font.pixelSize: island.f(15)
+    color: island.agents.tone
+  }
+
   Text {
     anchors.centerIn: parent
     visible: view.kind === "mic"

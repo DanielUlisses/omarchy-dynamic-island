@@ -25,6 +25,7 @@ backlight, and `gpu-screen-recorder` for recording.
 | Stopwatch | The running time. It keeps going across restarts |
 | Next meeting | 15 minutes before an event: the title scrolling past and a countdown, then a "Starting now" message |
 | Script activities | Any script can put a live activity in the island: glyph, progress ring, value, title |
+| Coding agents | [herdr](https://herdr.dev) agents here and on your saved SSH machines: the most urgent one's task and state ("needs you", "done", "working"), a toast when one needs you or finishes, and a click to land on it |
 | Bluetooth devices | Headphones, speakers, keyboards, mice, controllers: the device's name and battery when it connects, and a message when it disconnects |
 | Two at once | The second activity splits off into its own bubble. Click the bubble to open that one |
 | Play on | The speaker button in the player lists every audio output (speakers, headphones, Bluetooth, HDMI) to switch to |
@@ -146,6 +147,9 @@ apply as soon as you save the file.
 | `holidays` | `"auto"` | Public holidays: `"auto"` (from the timezone), `"off"`, or a country code |
 | `timerSound` | `true` | Play the alarm sound when a timer ends |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
+| `herdr` | `true` | Show herdr agents (see below) |
+| `herdrToasts` | `true` | Toast when an agent needs you or finishes |
+| `herdrInterval` | `5` | Seconds between asks to every herdr machine |
 | `notifications` | `true` | Show notifications in the island (replaces Omarchy's notification popups) |
 | `inbox` | `true` | Show the bell for notifications waiting in the inbox |
 | `osd` | `true` | Show Omarchy's on-screen popups (volume, brightness, mic, …) in the island instead of at the bottom |
@@ -250,6 +254,38 @@ provider, the profile picked in the settings, the calendar's default
 launcher, `browserCommand`, then `xdg-open`. Named launchers also appear in
 the settings' profile list.
 
+## Coding agents (herdr)
+
+If [herdr](https://herdr.dev) is installed, the island follows the coding
+agents it runs: the ones on this machine and the ones on every SSH machine
+saved with `herdr machine add`. Only the live ones show up:
+
+| State | Means | Looks like |
+|---|---|---|
+| **needs you** | herdr saw an approval or a question on screen | red; it takes the pill from everything but a recording |
+| **done** | finished, and you have not looked at it yet | green |
+| working | busy | accent, the robot breathes |
+
+Idle agents ("ready") are not shown, so with nothing going on the island
+stays quiet. When an agent starts waiting on you or finishes, a toast says
+which one and where (machine · repo). Click the toast, or a row in the opened
+list, to land on that agent, the way the herdr bar widget does: its pane is
+focused on the machine running it (which also clears its "done"), then the
+window attached to that machine comes up (`herdr --remote <ssh target>`, or
+plain `herdr` for this machine). With no such window, one is opened in foot
+with the widget's app id, so the two share windows.
+
+The island asks every enabled machine at once every `herdrInterval` seconds
+(`herdr --machine <id> agent list`). A machine that doesn't answer keeps what
+it last reported. The local server is only asked while it is running, so the
+island never starts one.
+
+```bash
+omarchy-shell dynamic-island agents          # the live agents, as JSON
+omarchy-shell dynamic-island openAgents      # open the list
+omarchy-shell dynamic-island demo agents     # preview: agents, agents-expanded, agent-done
+```
+
 ## MacBook notch
 
 On a MacBook with a notch, keep the default `"style": "notch"` and set the island to the
@@ -278,7 +314,8 @@ omarchy-shell dynamic-island demo media    # preview: media paused split recordi
                                            # volume brightness charging lowbattery notification
                                            # notification-actions inbox
                                            # track toast expanded idle-expanded timer stopwatch
-                                           # activity calendar camera device outputs off
+                                           # activity calendar camera device outputs
+                                           # agents agents-expanded agent-done off
 ```
 
 Timers, the stopwatch, and live activities for your own scripts:

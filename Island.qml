@@ -715,10 +715,23 @@ Item {
   Devices { island: root }
   Calendar { id: calendarSource; island: root }
   Activities { id: activitySource; island: root }
+  Herdr { id: herdrSource; island: root }
 
   readonly property var clocks: clockSource
   readonly property var calendar: calendarSource
   readonly property var activity: activitySource.current
+  readonly property var agents: herdrSource
+
+  // Land on a herdr agent (a row in the list, or the agent a toast is about).
+  function openAgent(agent) {
+    herdrSource.open(agent)
+    hud = null
+    collapse()
+  }
+
+  // The list closes by itself once nothing in it is live any more.
+  readonly property int liveAgents: herdrSource.live.length
+  onLiveAgentsChanged: if (liveAgents === 0 && view === "agents-expanded") collapse()
 
   function endActivity(id) { activitySource.end(id, "") }
 
@@ -970,6 +983,9 @@ Item {
       return { tone: cameraActive ? greenColor : orangeColor, level: 0.85, pulse: true, period: 2400 }
     if (v === "calendar")
       return { tone: accentColor, level: 0.85, pulse: true, period: 2400 }
+    if (v === "agents" || v === "agents-expanded")
+      return { tone: herdrSource.tone, level: 0.85, pulse: herdrSource.blocked > 0 || (!!herdrSource.first && herdrSource.first.status === "working"),
+               period: herdrSource.blocked > 0 ? 1200 : 2000 }
     if (v === "inbox")
       return { tone: accentColor, level: 0.6 }
     if (v === "idle" || v === "idle-hover")
@@ -993,6 +1009,7 @@ Item {
   readonly property bool stopwatchActivity: clockSource.stopwatchActive
   readonly property bool scriptActivity: activitySource.current !== null
   readonly property bool calendarActivity: setting("calendar", true) !== false && calendarSource.soon
+  readonly property bool agentsActivity: herdrSource.live.length > 0
 
   readonly property var activityList: Model.activities({
     recording: recordingActivity,
@@ -1002,7 +1019,9 @@ Item {
     timer: timerActivity,
     stopwatch: stopwatchActivity,
     activity: scriptActivity,
-    calendar: calendarActivity
+    calendar: calendarActivity,
+    agents: agentsActivity,
+    agentsUrgent: herdrSource.blocked > 0
   })
   readonly property string primary: activityList.length > 0 ? activityList[0] : ""
   readonly property string secondary: activityList.length > 1 ? activityList[1] : ""
@@ -1030,7 +1049,7 @@ Item {
     idleHidden: idleHidden,
     hovered: hovered
   })
-  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length,
+  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length, agents: herdrSource.live.length,
     calendarSettings: calendarAdding ? calendarSource.sources.filter(function(l) { return l !== calendarSource.holidayLink }).length + 1 : 0 })
   readonly property var viewSize: {
     var v = Model.sizeFor(view, viewCounts, notchSize)
@@ -1110,6 +1129,11 @@ Item {
       if (hasMedia) mediaToggle()
       return
     }
+    // A toast about one agent: clicking it lands on that agent.
+    if (!userExpanded && view === "hud-toast" && hud && hud.agentKey) {
+      var agent = herdrSource.find(hud.agentKey)
+      if (agent) { openAgent(agent); return }
+    }
     // The bell owns the pill when nothing else is live: open the inbox.
     if (!userExpanded && primary === "inbox") {
       openInbox()
@@ -1174,6 +1198,7 @@ Item {
     if (kind === "off") {
       demo = null; hud = null; collapse(); recordingProbe.running = true; cameraProbe.running = true
       clocks.cancelTimer(); clocks.resetStopwatch(); activitySource.end("demo", ""); calendarSource.refresh()
+      herdrSource.stopDemo()
     } else if (kind === "media") {
       demo = { media: media }; mediaPosition = 71
     } else if (kind === "paused") {
@@ -1228,6 +1253,12 @@ Item {
       calendarSource.demo()
     } else if (kind === "calendar-view") {
       calendarSource.demo(); openCalendar()
+    } else if (kind === "agents") {
+      herdrSource.startDemo()
+    } else if (kind === "agents-expanded") {
+      herdrSource.startDemo(); openFocus = "agents"; expand()
+    } else if (kind === "agent-done") {
+      herdrSource.demoFinish()
     } else if (kind === "camera") {
       demo = { camera: true }; cameraActive = true
     } else if (kind === "device") {
@@ -1301,6 +1332,13 @@ Item {
     function endActivity(id: string, message: string): string { return activitySource.end(id, message) }
     function activities(): string { return JSON.stringify(activitySource.list()) }
     function refreshCalendar(): string { calendarSource.refresh(); return "ok" }
+    // Live herdr agents, and the list opened.
+    function agents(): string { return JSON.stringify(herdrSource.live) }
+    function openAgents(): string {
+      if (herdrSource.live.length === 0) return "no live agents"
+      root.openFocus = "agents"; root.expand(); return "ok"
+    }
+    function refreshAgents(): string { herdrSource.refresh(); return "ok" }
     // Join the next (or current) meeting that has a link.
     function joinNext(): string {
       var list = root.calendar.events
@@ -1329,6 +1367,13 @@ Item {
         stopwatch: root.clocks.stopwatchActive ? Math.round(root.clocks.stopwatchElapsed / 100) / 10 : null,
         activity: root.activity ? root.activity.id : null,
         nextEvent: root.calendar.next ? root.calendar.next.title : null,
+        agents: {
+          available: herdrSource.available,
+          total: herdrSource.agents.length,
+          blocked: herdrSource.blocked,
+          done: herdrSource.done,
+          working: herdrSource.working
+        },
         camera: root.cameraActive,
         outputs: root.audioOutputs.length,
         calendarTyping: root.calendarTyping,
@@ -1701,6 +1746,18 @@ Item {
             active: root.showing("calendar")
             width: root.s(root.slotSize("calendar").w); height: root.s(root.slotSize("calendar").h)
             CalendarCompact { anchors.fill: parent; island: root }
+          }
+
+          ViewSlot {
+            active: root.showing("agents")
+            width: root.s(root.slotSize("agents").w); height: root.s(root.slotSize("agents").h)
+            AgentsCompact { anchors.fill: parent; island: root }
+          }
+
+          ViewSlot {
+            active: root.showing("agents-expanded")
+            width: root.s(root.slotSize("agents-expanded").w); height: root.s(root.slotSize("agents-expanded").h)
+            AgentsView { anchors.fill: parent; island: root }
           }
 
           ViewSlot {

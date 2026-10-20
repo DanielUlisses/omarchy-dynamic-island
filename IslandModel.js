@@ -27,6 +27,7 @@ var sizes = {
   "stopwatch":     { w: 236, h: 32, r: 16 },
   "activity":      { w: 256, h: 32, r: 16 },
   "calendar":      { w: 300, h: 32, r: 16 },
+  "agents":        { w: 320, h: 32, r: 16 },
   "clock-expanded": { w: 380, h: 132, r: 40 },
   "activity-expanded": { w: 392, h: 104, r: 38 },
   "calendar-expanded": { w: 500, h: 262, r: 40 },
@@ -35,12 +36,18 @@ var sizes = {
 
 // Compact activities in priority order. The first one present owns the pill;
 // the second one, if any, gets the detached bubble on the right.
-var activityOrder = ["recording", "timer", "activity", "media", "stopwatch", "calendar", "mic", "inbox"]
+var activityOrder = ["recording", "timer", "activity", "media", "agents", "stopwatch", "calendar", "mic", "inbox"]
 
 function activities(flags) {
   var out = []
   for (var i = 0; i < activityOrder.length; i++)
     if (flags[activityOrder[i]]) out.push(activityOrder[i])
+  // An agent waiting on an answer outranks everything but a recording.
+  var a = out.indexOf("agents")
+  if (flags.agentsUrgent && a > 0) {
+    out.splice(a, 1)
+    out.splice(out[0] === "recording" ? 1 : 0, 0, "agents")
+  }
   return out
 }
 
@@ -61,6 +68,7 @@ function viewFor(state) {
     if (focus === "timer" || focus === "stopwatch") return "clock-expanded"
     if (focus === "activity") return "activity-expanded"
     if (focus === "calendar") return "calendar-expanded"
+    if (focus === "agents") return "agents-expanded"
     if (focus === "media" && state.hasMedia) return "media-expanded"
     return state.hasMedia && focus !== "calendar" ? "media-expanded" : "idle-expanded"
   }
@@ -90,6 +98,15 @@ function outputsSize(count) {
   return { w: 392, h: 16 + 22 + 8 + rows * 40 + (rows - 1) * 4 + 16, r: 36 }
 }
 
+// Herdr agents: a header plus one row per live agent (five, then it scrolls).
+var agentRowHeight = 46
+var agentRowGap = 4
+
+function agentsSize(count) {
+  var rows = Math.max(1, Math.min(5, count))
+  return { w: 440, h: 16 + 22 + 8 + rows * agentRowHeight + (rows - 1) * agentRowGap + 16, r: 36 }
+}
+
 // Calendar settings: header, link field, one row per calendar (up to five,
 // then it scrolls), the exclude field and the holidays row.
 function calendarSettingsSize(feeds) {
@@ -100,12 +117,13 @@ function calendarSettingsSize(feeds) {
 // Views that sit on the notch itself; with a measured notch they grow to
 // clear the camera cutout with room for content on both sides.
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",
-                    "stopwatch", "activity", "calendar"]
+                    "stopwatch", "activity", "calendar", "agents"]
 
 function sizeFor(view, counts, notch) {
   var base
   if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
   else if (view === "outputs-expanded") base = outputsSize(counts && counts.outputs || 0)
+  else if (view === "agents-expanded") base = agentsSize(counts && counts.agents || 0)
   else if (view === "calendar-expanded" && counts && counts.calendarSettings) base = calendarSettingsSize(counts.calendarSettings - 1)
   else base = sizes[view] || sizes["idle"]
   if (!notch || !(notch.w > 0) || compactViews.indexOf(view) === -1) return base
@@ -688,6 +706,130 @@ function holidayUrl(code) {
   return h ? "https://calendar.google.com/calendar/ical/en." + h.id + "%23holiday%40group.v.calendar.google.com/public/basic.ics" : ""
 }
 
+// ---------------------------------------------------------------- herdr
+// Agents running under herdr (https://herdr.dev), on this machine and on
+// every saved SSH machine. The poll prints one section per machine:
+//
+//   @@HERDR <machine id, or "local"> <ssh target, or "-"> <session> <label>
+//   <the JSON of `herdr [--machine <id>] agent list`>
+//
+// The target and session are what a window attached to that machine runs
+// (`herdr --remote <target> [--session <name>]`), which is how a click finds
+// that window or opens one.
+//
+// A section whose JSON is missing or unreadable means that machine did not
+// answer this time.
+
+// Herdr's states worth showing, most urgent first. `idle` (ready, already
+// seen) and `unknown` are not news.
+var agentRank = { blocked: 0, done: 1, working: 2 }
+
+function baseName(path) {
+  var p = String(path || "").replace(/\/+$/, "")
+  return p.substring(p.lastIndexOf("/") + 1)
+}
+
+// -> { agents: [...], failed: [machine ids that did not answer] }
+function herdrParse(text) {
+  var agents = [], failed = []
+  var sections = String(text || "").split(/^@@HERDR /m)
+  for (var i = 1; i < sections.length; i++) {
+    var body = sections[i]
+    var nl = body.indexOf("\n")
+    var head = nl < 0 ? body : body.substring(0, nl)
+    var json = nl < 0 ? "" : body.substring(nl + 1).trim()
+    var words = head.trim().split(" ")
+    var id = words[0] || ""
+    var machine = id === "local" ? "" : id
+    var target = words[1] && words[1] !== "-" ? words[1] : ""
+    var session = words[2] || "default"
+    var label = words.slice(3).join(" ").trim()
+    var list = null
+    try {
+      var parsed = JSON.parse(json)
+      list = parsed && parsed.result && Array.isArray(parsed.result.agents) ? parsed.result.agents : null
+    } catch (e) {}
+    if (!list) { failed.push(machine); continue }
+    for (var j = 0; j < list.length; j++) {
+      var a = list[j] || {}
+      var pane = String(a.pane_id || "")
+      if (!pane) continue
+      agents.push({
+        key: (machine || "local") + "/" + pane,
+        machine: machine,
+        target: target,
+        session: session,
+        label: label,
+        pane: pane,
+        agent: String(a.agent || ""),
+        status: String(a.agent_status || "unknown"),
+        title: plainText(a.terminal_title_stripped || a.terminal_title || ""),
+        // A herdr worktree is "<repo>--<branch>"; the title already says
+        // which task it is, so the place is the repo.
+        project: baseName(a.foreground_cwd || a.cwd).split("--")[0]
+      })
+    }
+  }
+  return { agents: agents, failed: failed }
+}
+
+// The agents worth showing: waiting on you, then finished unseen, then busy.
+function herdrLive(agents) {
+  return (agents || []).filter(function(a) { return agentRank[a.status] !== undefined })
+    .sort(function(a, b) {
+      return agentRank[a.status] - agentRank[b.status]
+        || String(a.label).localeCompare(String(b.label)) || String(a.pane).localeCompare(String(b.pane))
+    })
+}
+
+// What changed since the last poll that deserves a toast. `prev` maps agent
+// key -> last status; `primed` is false on the very first poll, which only
+// learns what is already there. -> [{ agent, kind: "blocked" | "done" }]
+function herdrChanges(prev, agents, primed) {
+  var out = []
+  if (!primed) return out
+  for (var i = 0; i < agents.length; i++) {
+    var a = agents[i]
+    var was = prev[a.key]
+    if (was === a.status) continue
+    if (a.status === "blocked") out.push({ agent: a, kind: "blocked" })
+    // Finished: `done` if nobody was looking, `idle` if its pane was in view.
+    else if (was === "working" && (a.status === "done" || a.status === "idle")) out.push({ agent: a, kind: "done" })
+    else if (was === "blocked" && a.status === "done") out.push({ agent: a, kind: "done" })
+  }
+  return out
+}
+
+// "bss · helm-charts", or just the project for an agent on this machine.
+function agentPlace(a) {
+  return [a.label, a.project].filter(function(p) { return p }).join(" · ")
+}
+
+// What to call an agent in one line: its task, unless the terminal title
+// is only the agent's own name ("Claude Code"), then where it runs.
+function agentTitle(a) {
+  var t = String(a.title || "").trim()
+  if (!t || t.toLowerCase() === String(a.agent || "").toLowerCase()
+      || /^(claude( code)?|codex|opencode|gemini( cli)?|amp|pi|cursor( agent)?)$/i.test(t))
+    return agentPlace(a) || t || a.agent || a.pane
+  return t
+}
+
+function agentStateText(status) {
+  return status === "blocked" ? "needs you" : (status === "done" ? "done" : (status === "working" ? "working" : "ready"))
+}
+
+// "1 needs you · 2 working"
+function agentsSummary(agents) {
+  var counts = { blocked: 0, done: 0, working: 0 }
+  for (var i = 0; i < agents.length; i++) if (counts[agents[i].status] !== undefined) counts[agents[i].status]++
+  var parts = []
+  if (counts.blocked) parts.push(counts.blocked + " needs you")
+  if (counts.done) parts.push(counts.done + " done")
+  if (counts.working) parts.push(counts.working + " working")
+  return parts.join(" · ")
+}
+
 // "in 12m", "in 1h 5m", "now"
 function untilText(start, now) {
   var s = Math.round((start - now) / 1000)
@@ -996,6 +1138,9 @@ var defaultSettings = {
   bluetooth: true,
   camera: true,
   calendar: true,
+  herdr: true,
+  herdrToasts: true,
+  herdrInterval: 5,
   notifications: true,
   inbox: true,
   osd: true,
