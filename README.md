@@ -262,13 +262,15 @@ saved with `herdr machine add`. Only the live ones show up:
 
 | State | Means | Looks like |
 |---|---|---|
-| **needs you** | herdr saw an approval or a question on screen | red; it takes the pill from everything but a recording |
+| **needs you** | herdr saw an approval or a question on screen | red |
 | **done** | finished, and you have not looked at it yet | green |
 | working | busy | accent, the robot breathes |
 
 Idle agents ("ready") are not shown, so with nothing going on the island
 stays quiet. When an agent starts waiting on you or finishes, a toast says
-which one and where (machine · repo). Click the toast, or a row in the opened
+which one and where (machine · repo). Agents never take the pill: they
+ride in the bubble beside whatever it shows (the resting ticker with your next
+meeting, the calendar, a timer), and only when nothing else wants the bubble. Click the toast, or a row in the opened
 list, to land on that agent, the way the herdr bar widget does: its pane is
 focused on the machine running it (which also clears its "done"), then the
 window attached to that machine comes up (`herdr --remote <ssh target>`, or

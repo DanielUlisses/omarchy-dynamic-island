@@ -35,20 +35,25 @@ var sizes = {
 }
 
 // Compact activities in priority order. The first one present owns the pill;
-// the second one, if any, gets the detached bubble on the right.
-var activityOrder = ["recording", "timer", "activity", "media", "agents", "stopwatch", "calendar", "mic", "inbox"]
+// the second one, if any, gets the detached bubble on the right. Agents rank
+// last and never own the pill: their toasts are the news, so they ride in the
+// bubble beside whatever the pill shows, the resting ticker included.
+var activityOrder = ["recording", "timer", "activity", "media", "stopwatch", "calendar", "mic", "inbox", "agents"]
+var bubbleOnly = ["agents"]
 
 function activities(flags) {
   var out = []
   for (var i = 0; i < activityOrder.length; i++)
     if (flags[activityOrder[i]]) out.push(activityOrder[i])
-  // An agent waiting on an answer outranks everything but a recording.
-  var a = out.indexOf("agents")
-  if (flags.agentsUrgent && a > 0) {
-    out.splice(a, 1)
-    out.splice(out[0] === "recording" ? 1 : 0, 0, "agents")
-  }
   return out
+}
+
+// -> { primary, secondary }: the pill's activity ("" for the resting pill)
+// and the bubble's.
+function slots(list) {
+  var primary = list.length > 0 && bubbleOnly.indexOf(list[0]) === -1 ? list[0] : ""
+  var rest = primary ? list.slice(1) : list
+  return { primary: primary, secondary: rest.length > 0 ? rest[0] : "" }
 }
 
 // Which view the island shows. Transient HUDs win over everything except an

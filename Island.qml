@@ -1020,11 +1020,11 @@ Item {
     stopwatch: stopwatchActivity,
     activity: scriptActivity,
     calendar: calendarActivity,
-    agents: agentsActivity,
-    agentsUrgent: herdrSource.blocked > 0
+    agents: agentsActivity
   })
-  readonly property string primary: activityList.length > 0 ? activityList[0] : ""
-  readonly property string secondary: activityList.length > 1 ? activityList[1] : ""
+  readonly property var activitySlots: Model.slots(activityList)
+  readonly property string primary: activitySlots.primary
+  readonly property string secondary: activitySlots.secondary
 
   property bool userExpanded: false
   property bool inboxOpen: false
