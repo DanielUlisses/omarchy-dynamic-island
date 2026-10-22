@@ -125,6 +125,14 @@ function calendarSettingsSize(feeds) {
   return { w: 580, h: 18 + 26 + 8 + 30 + 10 + rows * 36 + (rows - 1) * 4 + 10 + 30 + 6 + 26 + 18, r: 36 }
 }
 
+// The tallest any view gets (lists at their longest), so the window that
+// holds the island never crops one.
+function tallestView() {
+  var h = Math.max(inboxSize(4).h, outputsSize(6).h, agentsSize(5).h, calendarSettingsSize(5).h)
+  for (var k in sizes) h = Math.max(h, sizes[k].h)
+  return h
+}
+
 // Views that sit on the notch itself; with a measured notch they grow to
 // clear the camera cutout with room for content on both sides.
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",

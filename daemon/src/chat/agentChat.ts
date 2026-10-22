@@ -208,7 +208,7 @@ export class AgentChat extends EventEmitter {
     const secretary = this.workspace === "secretary";
     const cwd = secretary ? this.ctx.accounts.secretaryPath() : os.homedir();
     if (secretary && !fs.existsSync(path.join(cwd, "CLAUDE.md")))
-      throw new Error(`no secretary checkout at ${cwd} (set "secretaryPath" in accounts.json)`);
+      throw new Error(`no secretary checkout at ${cwd} (set the Secretary folder on the island's Settings tab)`);
 
     const content: ApiBlock[] = [...blocks, { type: "text", text }];
     async function* prompt(): AsyncGenerator<SDKUserMessage> {
@@ -229,6 +229,9 @@ export class AgentChat extends EventEmitter {
         // Secretary is its repo: its CLAUDE.md, skills and settings. The plain
         // island chat starts clean, so no user hooks fire inside it.
         settingSources: secretary ? ["user", "project", "local"] : [],
+        // Secretary runs in auto mode: the classifier approves or denies each
+        // call, and only what it can't decide comes to the approval card.
+        ...(secretary ? { permissionMode: "auto" as const } : {}),
         systemPrompt: { type: "preset", preset: "claude_code", append: ISLAND_PROMPT },
         canUseTool: async (toolName, input) => {
           if (readOnly.has(toolName) || ["Read", "Glob", "Grep", "LS", "TodoWrite"].includes(toolName))

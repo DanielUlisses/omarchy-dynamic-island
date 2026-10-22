@@ -2,7 +2,7 @@
 # island-ctl: drive the island's assistant from a keybind or a terminal.
 #
 #   island-ctl chat                 open/close Island Chat
-#   island-ctl agents | plans       open/close the workspace on that tab
+#   island-ctl agents | plans | settings   open/close the workspace on that tab
 #   island-ctl approve | always | deny
 #                                   answer the oldest waiting permission request
 #   island-ctl jump                 focus the herdr pane of the agent that needs you
@@ -105,7 +105,7 @@ keybinds() {
 
 case "${1:-}" in
   chat) island toggleChat ;;
-  agents|plans) island workspace "$1" ;;
+  agents|plans|settings) island workspace "$1" ;;
   workspace) island workspace "${2:-}" ;;
   approve|allow) decide approve allow ;;
   always) decide alwaysAllow always_allow ;;

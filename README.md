@@ -301,7 +301,7 @@ assistant for your coding agents. An Omarchy avatar sits in the resting pill
 pointer) with a plan gauge beside it. It breathes and blinks when idle, reads
 along with a typing badge while an agent works, hops with an amber "!" when one
 needs you, smiles with a green check when it finishes, and bobs to music. Poke it to open
-the workspace: icon tabs for Home, Chat and Plans, and + to start a new agent in
+the workspace: icon tabs for Home, Chat, Plans and Settings, and + to start a new agent in
 herdr.
 
 | Piece | What it does |
@@ -350,7 +350,7 @@ again, and Island Chat takes the key.
 | `SUPER + ALT + P` | Pin the workspace open |
 
 ```bash
-island-ctl chat | agents | plans     # open (or close) the workspace on a tab
+island-ctl chat | agents | plans | settings   # open (or close) the workspace on a tab
 island-ctl approve | always | deny   # the oldest waiting request; works with the island down
 island-ctl jump | pin | capture
 island-ctl attach ~/notes.md         # attach a file to Island Chat
@@ -403,14 +403,15 @@ to accounts.json. To have new shells use it, add this to `~/.bashrc`:
 
 ### Secretary
 
-If the `secretaryPath` setting (in the island's entry in
-`~/.config/omarchy/shell.json`, default `~/secretary`) points to a checkout of your
+If the Secretary folder (the 󰒓 Settings tab, or `secretaryPath` in the
+island's entry in `~/.config/omarchy/shell.json`, default `~/secretary`) points to a checkout of your
 [secretary](https://github.com/DanielUlisses/secretary) repo, Island Chat's
 header gets a **Secretary** switch. In that workspace the chat runs in the
 repo with its `CLAUDE.md`, rules and skills (`/refresh`, `/book-time`,
 `/mail`, `/meetings`, …) and the Claude login you picked, so "plan my day" or
-"what did I book this week" works from the island. Its tool prompts come to
-the approval card like any other agent's, and its own rules (preview every
+"what did I book this week" works from the island. It runs in auto mode:
+Claude Code's classifier approves or denies each tool call, and only the ones
+it can't decide come to the approval card. Its own rules (preview every
 write and wait for an ok, secrets only as `op://` references) still apply.
 
 `~/.config/omarchy-dynamic-island/daemon.json` (optional): `herdrInterval`
