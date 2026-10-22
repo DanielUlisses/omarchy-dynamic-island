@@ -22,10 +22,10 @@ command -v island-hook >/dev/null 2>&1 && [ ! -x "$hook" ] && hook="$(command -v
 island() { omarchy-shell dynamic-island "$@" 2>/dev/null; }
 rpc() { "$hook" --rpc "$@"; }
 
-# Defaults, SUPER + ALT + a letter. Each one is skipped if Hyprland already
-# binds that key.
+# Defaults: SUPER + A for chat, SUPER + ALT + a letter for the rest. Each one
+# is skipped if Hyprland already binds that key.
 BINDS=(
-  "SUPER + ALT + A|Island Chat|chat"
+  "SUPER + A|Island Chat|chat"
   "SUPER + ALT + Y|Allow the waiting agent request|approve"
   "SUPER + ALT + N|Deny the waiting agent request|deny"
   "SUPER + ALT + J|Jump to the agent that needs you|jump"
@@ -52,6 +52,8 @@ mask_of() {
   echo "$mask"
 }
 
+mods_of() { local m="${1%+*}"; echo "$m" | tr -d ' ' | tr '+' ' ' | tr a-z A-Z; }
+
 key_of() { echo "${1##*+}" | tr -d ' '; }
 
 remove_block() {
@@ -76,7 +78,7 @@ keybinds() {
       echo "# hyprland.conf"
       for spec in "${BINDS[@]}"; do
         IFS='|' read -r key desc cmd <<<"$spec"
-        echo "bindd = SUPER ALT, $(key_of "$key"), $desc, exec, $self $cmd"
+        echo "bindd = $(mods_of "$key"), $(key_of "$key"), $desc, exec, $self $cmd"
       done ;;
     --uninstall) remove_block; echo "removed" ;;
     --install)

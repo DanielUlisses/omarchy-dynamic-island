@@ -335,11 +335,13 @@ would ask you; `PreToolUse` only reports what the agent is doing.
 
 `./install-hooks.sh --keybinds` (or `island-ctl keybinds --install`) adds
 these to `~/.config/hypr/bindings.lua`, skipping any key already taken.
+Omarchy may already use `SUPER + A`; remove that binding first and run it
+again, and Island Chat takes the key.
 `island-ctl keybinds --print` shows them, including `hyprland.conf` lines.
 
 | Key | Does |
 |---|---|
-| `SUPER + ALT + A` | Open or close Island Chat |
+| `SUPER + A` | Open or close Island Chat |
 | `SUPER + ALT + Y` | Allow the waiting request |
 | `SUPER + ALT + N` | Deny the waiting request |
 | `SUPER + ALT + J` | Jump to the agent that needs you |

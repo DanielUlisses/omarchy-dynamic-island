@@ -7,7 +7,7 @@
 #   ./install-hooks.sh                       ~/.claude (or $CLAUDE_CONFIG_DIR)
 #   ./install-hooks.sh --config-dir ~/.claude-work   also another Claude login
 #   ./install-hooks.sh --no-statusline       leave the status line alone
-#   ./install-hooks.sh --keybinds            also bind SUPER + ALT + A/Y/N/J/P
+#   ./install-hooks.sh --keybinds            also bind SUPER + A, SUPER + ALT + Y/N/J/P
 #   ./install-hooks.sh --uninstall           undo all of it (keeps accounts.json)
 #
 # settings.json is backed up beside itself (settings.json.island-backup-<time>)
