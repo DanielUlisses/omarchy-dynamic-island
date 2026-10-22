@@ -31,7 +31,9 @@ var sizes = {
   "clock-expanded": { w: 380, h: 132, r: 40 },
   "activity-expanded": { w: 392, h: 104, r: 38 },
   "calendar-expanded": { w: 500, h: 262, r: 40 },
-  "notification-actions": { w: 404, h: 118, r: 38 }
+  "notification-actions": { w: 404, h: 118, r: 38 },
+  "approval":      { w: 540, h: 164, r: 40 },
+  "workspace-expanded": { w: 720, h: 400, r: 44 }
 }
 
 // Compact activities in priority order. The first one present owns the pill;
@@ -60,6 +62,10 @@ function slots(list) {
 // island the user deliberately opened, since a volume tick while reading the
 // expanded player should not throw the player away.
 function viewFor(state) {
+  // A coding agent waiting on a yes/no (or a question) opens the island by
+  // itself, over anything but the workspace, which shows it in its own tab.
+  if (state.approval && !(state.userExpanded && state.workspaceOpen)) return "approval"
+  if (state.userExpanded && state.workspaceOpen) return "workspace-expanded"
   if (state.userExpanded && state.inboxOpen) return "inbox-expanded"
   if (state.userExpanded && state.outputsOpen) return "outputs-expanded"
   if (state.userExpanded && state.calendarOpen) return "calendar-expanded"
@@ -119,14 +125,33 @@ function calendarSettingsSize(feeds) {
   return { w: 580, h: 18 + 26 + 8 + 30 + 10 + rows * 36 + (rows - 1) * 4 + 10 + 30 + 6 + 26 + 18, r: 36 }
 }
 
+// The tallest any view gets (lists at their longest), so the window that
+// holds the island never crops one.
+function tallestView() {
+  var h = Math.max(inboxSize(4).h, outputsSize(6).h, agentsSize(5).h, calendarSettingsSize(5).h)
+  for (var k in sizes) h = Math.max(h, sizes[k].h)
+  return h
+}
+
 // Views that sit on the notch itself; with a measured notch they grow to
 // clear the camera cutout with room for content on both sides.
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",
                     "stopwatch", "activity", "calendar", "agents"]
 
+// The approval card: a header, what the tool wants to do, and the buttons; a
+// question instead lists its options (four, then it scrolls).
+function approvalSize(approval) {
+  if (!approval) return sizes["approval"]
+  var q = approval.questions && approval.questions.length > 0 ? approval.questions[0] : null
+  if (!q) return sizes["approval"]
+  var rows = Math.max(1, Math.min(4, q.options.length))
+  return { w: 540, h: 18 + 22 + 6 + 36 + rows * 34 + (rows - 1) * 4 + (q.multiSelect ? 38 : 0) + 20, r: 40 }
+}
+
 function sizeFor(view, counts, notch) {
   var base
-  if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
+  if (view === "approval") base = approvalSize(counts && counts.approval)
+  else if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
   else if (view === "outputs-expanded") base = outputsSize(counts && counts.outputs || 0)
   else if (view === "agents-expanded") base = agentsSize(counts && counts.agents || 0)
   else if (view === "calendar-expanded" && counts && counts.calendarSettings) base = calendarSettingsSize(counts.calendarSettings - 1)
@@ -1154,7 +1179,12 @@ var defaultSettings = {
   charging: true,
   trackChange: true,
   recording: true,
-  mic: true
+  mic: true,
+  assistant: true,
+  planPill: true,
+  avatarTracking: true,
+  approvalCard: true,
+  secretaryPath: "~/secretary"
 }
 
 function missingSettings(settings) {
@@ -1175,4 +1205,120 @@ function parseKeybind(text) {
     mask |= bit
   }
   return { mask: mask, key: parts[parts.length - 1] }
+}
+
+// ------------------------------------------------------------------
+// Assistant: plan gauges, diff counts, the Omarchy avatar's mood, and a
+// little syntax colour for the diff viewer.
+// ------------------------------------------------------------------
+
+// What a plan window counts as now: 0 once its reset time has passed.
+function windowPct(w, now) {
+  if (!w || !(w.resetsAt > 0)) return -1
+  return w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, Number(w.usedPct) || 0))
+}
+
+// "green" below 50 %, "orange" to 80 %, "red" above, "none" without numbers.
+function planTier(pct) {
+  if (!(pct >= 0)) return "none"
+  return pct < 50 ? "green" : (pct <= 80 ? "orange" : "red")
+}
+
+// The pill's number: the active account's 5-hour share, or the highest
+// burn among all accounts when the active one has none.
+// -> { pct, account } or null
+function planHeadline(accounts, now) {
+  var list = accounts || []
+  var best = null
+  for (var i = 0; i < list.length; i++) {
+    var a = list[i]
+    var pct = windowPct(a.fiveHour, now)
+    if (pct < 0) pct = windowPct(a.sevenDay, now)
+    if (pct < 0) continue
+    if (a.active) return { pct: pct, account: a }
+    if (!best || pct > best.pct) best = { pct: pct, account: a }
+  }
+  return best
+}
+
+// "Resets in 1h 42m"
+function resetText(resetsAt, now) {
+  var s = Math.max(0, Math.round((resetsAt - now) / 1000))
+  if (s <= 0) return "Resetting…"
+  var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
+  if (d > 0) return "Resets in " + d + "d " + h + "h"
+  if (h > 0) return "Resets in " + h + "h " + m + "m"
+  return "Resets in " + Math.max(1, m) + "m"
+}
+
+// "+12 -3", or "" for no changes.
+function diffText(added, removed) {
+  if (!(added > 0) && !(removed > 0)) return ""
+  return "+" + (added || 0) + " -" + (removed || 0)
+}
+
+// An editor-tab badge for a file: two letters and the language's colour.
+var languages = {
+  ts: ["TS", "#3178c6"], tsx: ["TS", "#3178c6"], js: ["JS", "#c9a400"], jsx: ["JS", "#c9a400"], mjs: ["JS", "#c9a400"],
+  py: ["PY", "#3572a5"], go: ["GO", "#00add8"], rs: ["RS", "#b7410e"], rb: ["RB", "#cc342d"], java: ["JV", "#b07219"],
+  qml: ["QM", "#41cd52"], sh: ["SH", "#4eaa25"], bash: ["SH", "#4eaa25"], lua: ["LU", "#000080"], md: ["MD", "#6e7681"],
+  json: ["{}", "#8a6d00"], yaml: ["YM", "#cb171e"], yml: ["YM", "#cb171e"], toml: ["TM", "#9c4221"], tf: ["TF", "#7b42bc"],
+  css: ["CS", "#663399"], html: ["HT", "#e34c26"], sql: ["SQ", "#e38c00"], c: ["C", "#555555"], cpp: ["C+", "#f34b7d"],
+  cs: ["C#", "#178600"], php: ["PH", "#4f5d95"], swift: ["SW", "#f05138"], kt: ["KT", "#a97bff"], nix: ["NX", "#7e7eff"]
+}
+function languageOf(path) {
+  var name = String(path || "").split("/").pop()
+  var ext = name.indexOf(".") > 0 ? name.split(".").pop().toLowerCase() : ""
+  if (name === "Dockerfile") return { badge: "DK", color: "#384d54" }
+  var l = languages[ext]
+  return l ? { badge: l[0], color: l[1] } : { badge: (ext || "··").slice(0, 2).toUpperCase(), color: "#6e7681" }
+}
+
+// The avatar's state, most pressing first.
+function avatarMood(s) {
+  if (s.approval) return "approval"
+  if (s.poked) return "poked"
+  if (s.working) return "working"
+  if (s.done) return "done"
+  if (s.music) return "music"
+  return "idle"
+}
+
+var codeKeywords = /\b(import|export|from|const|let|var|function|return|if|else|for|while|class|new|async|await|def|fn|pub|use|struct|impl|match|type|interface|property|readonly|true|false|null|undefined|None|self|this)\b/g
+
+function escapeHtml(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/ /g, "&nbsp;")
+}
+
+// One line of code as StyledText: strings, comments, numbers and keywords
+// tinted. Deliberately small: it only has to read well at a glance.
+function highlightLine(text, c) {
+  var line = String(text || "")
+  if (line.length > 400) line = line.substring(0, 400) + "…"
+  var comment = line.search(/(\/\/|#(?!include)|--\s)/)
+  var code = comment >= 0 ? line.substring(0, comment) : line
+  var rest = comment >= 0 ? line.substring(comment) : ""
+  var out = ""
+  var re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)/g
+  var last = 0, m
+  function paint(color, t) { return "<font color=\"" + color + "\">" + escapeHtml(t) + "</font>" }
+  // Keywords and numbers in one pass over the raw text, so nothing matches
+  // inside markup added earlier.
+  function plain(t) {
+    var res = "", at = 0, k
+    var tok = new RegExp(codeKeywords.source + "|\\b(\\d+(?:\\.\\d+)?)\\b", "g")
+    while ((k = tok.exec(t)) !== null) {
+      res += escapeHtml(t.substring(at, k.index)) + paint(k[1] ? c.keyword : c.number, k[0])
+      at = k.index + k[0].length
+    }
+    return res + escapeHtml(t.substring(at))
+  }
+  while ((m = re.exec(code)) !== null) {
+    out += plain(code.substring(last, m.index))
+    out += paint(c.string, m[0])
+    last = m.index + m[0].length
+  }
+  out += plain(code.substring(last))
+  if (rest) out += paint(c.comment, rest)
+  return out
 }

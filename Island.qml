@@ -716,11 +716,13 @@ Item {
   Calendar { id: calendarSource; island: root }
   Activities { id: activitySource; island: root }
   Herdr { id: herdrSource; island: root }
+  Assistant { id: assistantSource; island: root }
 
   readonly property var clocks: clockSource
   readonly property var calendar: calendarSource
   readonly property var activity: activitySource.current
   readonly property var agents: herdrSource
+  readonly property var assistant: assistantSource
 
   // Land on a herdr agent (a row in the list, or the agent a toast is about).
   function openAgent(agent) {
@@ -734,6 +736,147 @@ Item {
   onLiveAgentsChanged: if (liveAgents === 0 && view === "agents-expanded") collapse()
 
   function endActivity(id) { activitySource.end(id, "") }
+
+  function decideFirst(decision) {
+    var ap = assistantSource.approval
+    if (!ap) return "nothing waiting"
+    if (ap.questions && ap.questions.length > 0) return "a question: answer it on the island"
+    assistantSource.decide(ap.id, decision)
+    return decision
+  }
+
+  // ------------------------------------------------------------------
+  // Assistant (island-agent-daemon): the Omarchy avatar, approvals that open
+  // the island by themselves, and the workspace with Agents & Diffs, Claude
+  // Plans and Island Chat. Everything here stays out of the way when the
+  // daemon is not running.
+  // ------------------------------------------------------------------
+  readonly property bool assistantOn: assistantSource.wanted
+  // The avatar and plan gauge on the resting pill: not over a measured notch
+  // or the lens face, which have their own look.
+  readonly property bool assistantFace: assistantOn && assistantSource.connected && notchSize.w === 0 && idleFace !== "lens"
+  readonly property bool showPlanPill: setting("planPill", true) !== false
+  readonly property bool approvalActive: assistantOn && setting("approvalCard", true) !== false && assistantSource.approval !== null
+  property bool workspaceOpen: false
+  property string workspaceTab: "agents"
+  // Pinned: the workspace stays open when the pointer leaves.
+  property bool pinned: false
+  property var chatAttachments: []
+  property bool poked: false
+  Timer { id: pokeTimer; interval: 700; onTriggered: root.poked = false }
+
+  // Chat and Settings have text fields: keys on demand, and no closing
+  // when the pointer leaves.
+  readonly property bool chatTyping: view === "workspace-expanded" && (workspaceTab === "chat" || workspaceTab === "settings")
+  readonly property string avatarMood: Model.avatarMood({
+    approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying,
+    done: assistantSource.agents.some(function(a) { return a.status === "done" })
+  })
+  // Who the avatar glows for: the busy agent's own colour.
+  readonly property color avatarGlow: assistantSource.workingAgent ? assistantSource.workingAgent.color
+    : (assistantSource.chat.busy ? "#d97757" : accentColor)
+
+  function openWorkspace(tab) {
+    poked = true
+    pokeTimer.restart()
+    if (view === "workspace-expanded" && (!tab || tab === workspaceTab)) { collapse(); return }
+    hud = null
+    inboxOpen = false
+    outputsOpen = false
+    calendarOpen = false
+    if (tab) workspaceTab = tab
+    workspaceOpen = true
+    userExpanded = true
+    if (!hovered && !pinned && workspaceTab !== "chat" && workspaceTab !== "settings") {
+      collapseTimer.interval = 8000
+      collapseTimer.restart()
+    }
+  }
+
+  // A merged agent row's key -> land on it through herdr (local or remote).
+  function openAgentByKey(key) {
+    var a = herdrSource.find(key)
+    if (a) { openAgent(a); return true }
+    return false
+  }
+
+  // The waiting approval's pane, else the most urgent agent herdr knows.
+  function jumpToAgent() {
+    var ap = assistantSource.approval
+    if (ap && ap.herdrPane && openAgentByKey("local/" + ap.herdrPane)) return "ok"
+    var rows = assistantSource.agents
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].pane && (rows[i].status === "blocked" || rows[i].status === "done" || rows[i].status === "working")
+          && openAgentByKey(rows[i].key)) return rows[i].key
+    if (herdrSource.first) { openAgent(herdrSource.first); return herdrSource.first.key }
+    return "no agent"
+  }
+
+  function captureRegion() {
+    // Out of the way while the region is picked.
+    var wasPinned = pinned
+    pinned = false
+    collapse()
+    assistantSource.capture(function(path, err) {
+      if (path) {
+        root.chatAttachments = root.chatAttachments.concat([path])
+        root.pinned = wasPinned
+        root.openWorkspace("chat")
+      } else if (err) {
+        root.showHud({ key: "capture", layout: "label", label: err, icon: "󰹑", valueText: "", color: root.orangeColor, duration: 2200 })
+      }
+    })
+  }
+
+  // Files dropped on the island go to Island Chat.
+  function attachFiles(urls) {
+    var add = []
+    for (var i = 0; i < urls.length; i++) {
+      var u = String(urls[i])
+      if (u.indexOf("file://") === 0) add.push(decodeURIComponent(u.substring(7)))
+    }
+    if (add.length === 0) return
+    chatAttachments = chatAttachments.concat(add).slice(-10)
+    openWorkspace("chat")
+  }
+
+  // A new approval: a bead of light, and the island opens on it (viewFor).
+  property int approvalCount: assistantSource.approvals.length
+  onApprovalCountChanged: {
+    if (approvalCount === 0) return
+    edgeSweep++
+    // In the workspace the card lives on the Agents tab.
+    if (view === "workspace-expanded") workspaceTab = "agents"
+  }
+
+  // Eyes that follow the pointer: Hyprland's global cursor position, a few
+  // times a second while the avatar is on screen.
+  property real lookX: 0
+  property real lookY: 0
+  readonly property bool avatarShown: assistantFace && (view === "idle" || view === "idle-hover")
+    || view === "workspace-expanded" || view === "approval"
+  Process {
+    id: cursorProbe
+    command: ["hyprctl", "cursorpos", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var c
+        try { c = JSON.parse(String(text || "")) } catch (e) { return }
+        var scr = win.screen
+        if (!scr || typeof c.x !== "number") return
+        var ax = scr.x + island.x + root.s(26)
+        var ay = scr.y + island.y + island.height / 2
+        root.lookX = Math.max(-1, Math.min(1, (c.x - ax) / Math.max(200, scr.width / 3)))
+        root.lookY = Math.max(-1, Math.min(1, (c.y - ay) / Math.max(150, scr.height / 3)))
+      }
+    }
+  }
+  Timer {
+    interval: 160
+    repeat: true
+    running: root.avatarShown && root.setting("avatarTracking", true) !== false
+    onTriggered: if (!cursorProbe.running) cursorProbe.running = true
+  }
 
   // ---- calendar view
   property bool calendarOpen: false
@@ -933,6 +1076,13 @@ Item {
     var festivals = calendar.todayAllDay
     if (festivals.length > 0) items.push({ key: "festival", text: "✦ " + festivals[0], color: orangeColor })
     if (notifications.doNotDisturb) items.push({ key: "dnd", text: "󰂛 Silenced", color: orangeColor })
+    // What the coding agents changed this session, from the hook relay.
+    if (assistantSource.connected) {
+      var busy = assistantSource.agents.filter(function(a) { return a.status === "working" || a.status === "blocked" }).length
+      var diff = Model.diffText(assistantSource.totals.added, assistantSource.totals.removed)
+      if (busy > 0 || diff)
+        items.push({ key: "agents", text: "󰚩 " + (busy > 0 ? busy + " " : "") + diff, color: assistantSource.working ? avatarGlow : "" })
+    }
     return items
   }
 
@@ -986,6 +1136,10 @@ Item {
     if (v === "agents" || v === "agents-expanded")
       return { tone: herdrSource.tone, level: 0.85, pulse: herdrSource.blocked > 0 || (!!herdrSource.first && herdrSource.first.status === "working"),
                period: herdrSource.blocked > 0 ? 1200 : 2000 }
+    if (v === "approval")
+      return { tone: orangeColor, level: 0.95, pulse: true, period: 900 }
+    if (v === "workspace-expanded")
+      return { tone: assistantSource.working ? avatarGlow : accentColor, level: 0.6, pulse: assistantSource.working, period: 1800 }
     if (v === "inbox")
       return { tone: accentColor, level: 0.6 }
     if (v === "idle" || v === "idle-hover")
@@ -1047,9 +1201,12 @@ Item {
     notificationActions: notification !== null && notification.actions.length > 0,
     primary: primary,
     idleHidden: idleHidden,
+    approval: approvalActive,
+    workspaceOpen: workspaceOpen,
     hovered: hovered
   })
   readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length, agents: herdrSource.live.length,
+    approval: assistantSource.approval,
     calendarSettings: calendarAdding ? calendarSource.sources.filter(function(l) { return l !== calendarSource.holidayLink }).length + 1 : 0 })
   readonly property var viewSize: {
     var v = Model.sizeFor(view, viewCounts, notchSize)
@@ -1057,8 +1214,13 @@ Item {
     // island breathes a little as the glances change.
     if ((view === "idle" || view === "idle-hover") && (idleFace === "ticker" || idleFace === "clock")) {
       var unit = Style.spacing.scale * scaleFactor
-      var needed = Math.ceil(idleMetrics.advanceWidth / unit) + 44 + (view === "idle-hover" ? 12 : 0)
-      return { w: Math.min(260, Math.max(v.w, needed)), h: v.h, r: v.r }
+      // Room for the avatar and the plan gauge beside the glance.
+      var extras = assistantFace ? 30 + (showPlanPill && assistantSource.headline ? 48 + 8 * Math.min(3, assistantSource.accounts.length - 1) : 0) : 0
+      var needed = Math.ceil(idleMetrics.advanceWidth / unit) + 44 + extras + (view === "idle-hover" ? 12 : 0)
+      return { w: Math.min(260 + extras, Math.max(v.w, needed)), h: v.h, r: v.r }
+    }
+    if ((view === "idle" || view === "idle-hover") && assistantFace && idleFace === "none") {
+      return { w: v.w + 40, h: v.h, r: v.r }
     }
     return v
   }
@@ -1085,6 +1247,8 @@ Item {
 
   function collapse() {
     userExpanded = false
+    workspaceOpen = false
+    pinned = false
     inboxOpen = false
     outputsOpen = false
     calendarOpen = false
@@ -1102,7 +1266,7 @@ Item {
   Timer {
     id: collapseTimer
     interval: 500
-    onTriggered: if (!root.hovered && !root.calendarTyping) root.collapse()
+    onTriggered: if (!root.hovered && !root.calendarTyping && !root.pinned && !root.chatTyping) root.collapse()
   }
 
   Timer {
@@ -1129,6 +1293,8 @@ Item {
       if (hasMedia) mediaToggle()
       return
     }
+    // The approval card and the workspace answer through their own buttons.
+    if (view === "approval" || view === "workspace-expanded") return
     // A toast about one agent: clicking it lands on that agent.
     if (!userExpanded && view === "hud-toast" && hud && hud.agentKey) {
       var agent = herdrSource.find(hud.agentKey)
@@ -1339,6 +1505,31 @@ Item {
       root.openFocus = "agents"; root.expand(); return "ok"
     }
     function refreshAgents(): string { herdrSource.refresh(); return "ok" }
+
+    // Assistant (scripts/island-ctl wraps these).
+    // workspace agents | plans | chat | settings; toggles when it is already open there.
+    function workspace(tab: string): string {
+      var t = ["agents", "plans", "chat", "settings"].indexOf(tab) !== -1 ? tab : ""
+      root.openWorkspace(t)
+      return root.workspaceOpen ? root.workspaceTab : "closed"
+    }
+    function toggleChat(): string { return workspace("chat") }
+    // The oldest waiting request: allow | always | deny.
+    function approve(): string { return root.decideFirst("allow") }
+    function alwaysAllow(): string { return root.decideFirst("always_allow") }
+    function deny(): string { return root.decideFirst("deny") }
+    function jump(): string { return root.jumpToAgent() }
+    function pin(): string {
+      if (!root.workspaceOpen) return "not open"
+      root.pinned = !root.pinned
+      return root.pinned ? "pinned" : "unpinned"
+    }
+    function capture(): string { root.captureRegion(); return "ok" }
+    function attach(path: string): string { root.attachFiles(["file://" + path]); return "ok" }
+    function assistantState(): string {
+      return JSON.stringify({ connected: assistantSource.connected, agents: assistantSource.agents,
+                              approvals: assistantSource.approvals, accounts: assistantSource.accounts })
+    }
     // Join the next (or current) meeting that has a link.
     function joinNext(): string {
       var list = root.calendar.events
@@ -1391,7 +1582,16 @@ Item {
           inbox: root.inbox.length,
           dnd: notifications.doNotDisturb
         },
-        screen: win.screen ? win.screen.name : null
+        screen: win.screen ? win.screen.name : null,
+        assistant: {
+          connected: assistantSource.connected,
+          agents: assistantSource.agents.length,
+          approvals: assistantSource.approvals.length,
+          plan: assistantSource.headline ? Math.round(assistantSource.headline.pct) : null,
+          workspace: root.workspaceOpen ? root.workspaceTab : null,
+          pinned: root.pinned,
+          chatBusy: assistantSource.chat.busy
+        }
       })
     }
     function ping(): string { return "ok" }
@@ -1426,9 +1626,10 @@ Item {
       targetScreen: root.targetScreen
     }
     anchors { top: true; left: true; right: true }
-    // Tall enough for the biggest view (a full inbox or output list); only
-    // the island itself takes input, the rest of the strip is click-through.
-    implicitHeight: root.s(360) + root.topMargin
+    // Tall enough for the biggest view (the workspace, or a list at its
+    // longest) plus room for its shadow; only the island itself takes input,
+    // the rest of the strip is click-through.
+    implicitHeight: root.s(Model.tallestView() + 24) + root.topMargin
     color: "transparent"
 
     WlrLayershell.namespace: "dynamic-island"
@@ -1436,7 +1637,9 @@ Item {
     // Keyboard only while the calendar's link field is up (typing and
     // Ctrl+V go straight in; Esc hands it back). Otherwise the island never
     // takes focus from the app you're in.
-    WlrLayershell.keyboardFocus: root.calendarTyping ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    // Island Chat takes keys on demand (when its field is clicked or opened).
+    WlrLayershell.keyboardFocus: root.calendarTyping ? WlrKeyboardFocus.Exclusive
+      : (root.chatTyping ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
     exclusionMode: root.reserveSpace ? ExclusionMode.Normal : ExclusionMode.Ignore
     exclusiveZone: root.reserveSpace ? root.s(32) + root.topMargin : 0
 
@@ -1445,6 +1648,12 @@ Item {
       sequence: "Escape"
       enabled: root.calendarTyping
       onActivated: root.calendarAdding = false
+    }
+
+    Shortcut {
+      sequence: "Escape"
+      enabled: root.chatTyping
+      onActivated: root.collapse()
     }
 
     mask: Region {
@@ -1601,6 +1810,17 @@ Item {
 
         HoverHandler { id: islandHover }
 
+        // Drop files on the island to hand them to Island Chat.
+        DropArea {
+          anchors.fill: parent
+          enabled: root.assistantOn && assistantSource.connected
+          keys: ["text/uri-list"]
+          onEntered: function(drag) { root.edgeSweep++ }
+          onDropped: function(drop) {
+            if (drop.hasUrls) { root.attachFiles(drop.urls); drop.acceptProposedAction() }
+          }
+        }
+
         Item {
           id: content
           // ViewSlots read this to put themselves on the pixel grid.
@@ -1614,7 +1834,9 @@ Item {
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             cursorShape: Qt.PointingHandCursor
             onClicked: function(mouse) { root.islandClicked(mouse.button) }
-            onWheel: function(wheel) { root.adjustVolume(wheel.angleDelta.y) }
+            // Volume only from the pill: when open, a scroll the content
+            // didn't take (past the end of a diff, an empty spot) lands here.
+            onWheel: function(wheel) { if (!root.userExpanded) root.adjustVolume(wheel.angleDelta.y) }
           }
 
           // Status light along the lip, kept clear of the rounded corners.
@@ -1782,6 +2004,18 @@ Item {
             active: root.showing("calendar-expanded")
             width: root.s(root.slotSize("calendar-expanded").w); height: root.s(root.slotSize("calendar-expanded").h)
             CalendarView { anchors.fill: parent; island: root }
+          }
+
+          ViewSlot {
+            active: root.showing("approval")
+            width: root.s(root.slotSize("approval").w); height: root.s(root.slotSize("approval").h)
+            ApprovalCard { anchors.fill: parent; island: root; approval: assistantSource.approval }
+          }
+
+          ViewSlot {
+            active: root.showing("workspace-expanded")
+            width: root.s(root.slotSize("workspace-expanded").w); height: root.s(root.slotSize("workspace-expanded").h)
+            WorkspaceView { anchors.fill: parent; island: root }
           }
 
           ViewSlot {

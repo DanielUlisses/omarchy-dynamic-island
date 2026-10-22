@@ -1,0 +1,9 @@
+#!/bin/sh
+# Runs dist/src/daemon.js with node (or bun). Symlinked into ~/.local/bin by install-hooks.sh.
+self=$(readlink -f "$0")
+here=$(dirname "$self")
+js="$here/../dist/src/daemon.js"
+if command -v node >/dev/null 2>&1; then exec node "$js" "$@"; fi
+if command -v bun >/dev/null 2>&1; then exec bun "$js" "$@"; fi
+echo "island-agent-daemon: needs node or bun" >&2
+exit 0

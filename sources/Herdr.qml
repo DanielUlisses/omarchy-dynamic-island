@@ -11,13 +11,19 @@ import "../IslandModel.js" as Model
 //
 // herdr pushes events only per pane and only for one server, so the island
 // asks every machine for its agent list every few seconds instead (each
-// answers in a fraction of a second, all at once).
+// answers in a fraction of a second, all at once). While island-agent-daemon
+// is connected it runs that same poll, and this takes the daemon's list
+// instead of asking itself.
 Item {
   id: herdr
 
   property var island: null
   readonly property bool wanted: !!island && island.setting("herdr", true) !== false
   readonly property int interval: Math.max(2, Number(island ? island.setting("herdrInterval", 5) : 5) || 5) * 1000
+
+  // The daemon's poll (sources/Assistant.qml), when it is connected.
+  readonly property var assistant: island ? island.assistant : null
+  readonly property bool external: !!assistant && assistant.connected && !demo
 
   // false once `herdr` turns out not to be installed.
   property bool available: true
@@ -77,7 +83,7 @@ Item {
   Timer {
     interval: herdr.interval
     repeat: true
-    running: herdr.wanted && herdr.available && !herdr.demo
+    running: herdr.wanted && herdr.available && !herdr.demo && !herdr.external
     triggeredOnStart: true
     onTriggered: herdr.refresh()
   }
@@ -87,7 +93,22 @@ Item {
 
   onWantedChanged: if (!wanted && !demo) { agents = []; lastStatus = {}; primed = false }
 
+  Connections {
+    target: herdr.external ? herdr.assistant : null
+    function onHerdrAgentsChanged() { herdr.takeExternal() }
+    function onHerdrAvailableChanged() { herdr.takeExternal() }
+  }
+  // Back on its own: poll again (the daemon may have said herdr was missing).
+  onExternalChanged: if (external) takeExternal(); else available = true
+
+  function takeExternal() {
+    if (!external || !wanted) return
+    available = assistant.herdrAvailable
+    apply(assistant.herdrAgents)
+  }
+
   function refresh() {
+    if (external) { assistant.call("herdr.refresh", {}); return }
     if (!demo && wanted && !poll.running) poll.running = true
   }
 

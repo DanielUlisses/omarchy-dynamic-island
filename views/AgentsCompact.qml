@@ -38,7 +38,7 @@ Item {
   Text {
     anchors.left: glyph.right
     anchors.leftMargin: island.s(9)
-    anchors.right: stateText.left
+    anchors.right: diffTicker.visible ? diffTicker.left : stateText.left
     anchors.rightMargin: island.s(8)
     anchors.verticalCenter: parent.verticalCenter
     text: view.lead ? Model.agentTitle(view.lead) : ""
@@ -48,6 +48,22 @@ Item {
     font.family: island.textFamily
     font.pixelSize: island.f(12)
     color: island.fg
+  }
+
+  // Live diff ticker from the island's hook relay: what this agent changed.
+  readonly property var row: view.lead && island.assistant ? island.assistant.rowFor(view.lead.key) : null
+  Text {
+    id: diffTicker
+    visible: text !== ""
+    anchors.right: stateText.left
+    anchors.rightMargin: island.s(6)
+    anchors.verticalCenter: parent.verticalCenter
+    text: view.row ? Model.diffText(view.row.added, view.row.removed) : ""
+    textFormat: Text.PlainText
+    renderType: Text.NativeRendering
+    font.family: island.fontFamily
+    font.pixelSize: island.f(10)
+    color: island.fgDim
   }
 
   Text {

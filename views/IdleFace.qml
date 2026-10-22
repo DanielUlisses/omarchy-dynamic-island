@@ -7,6 +7,8 @@ import qs.Commons
 //   clock  - just the time;
 //   lens   - a camera lens, like the hardware island;
 //   none   - the plain pill.
+// With the assistant on, the Omarchy avatar sits on the leading edge (click
+// it to open the workspace) and the plan gauge on the trailing edge.
 Item {
   id: face
 
@@ -14,8 +16,41 @@ Item {
   readonly property string mode: island.idleFace
   readonly property var item: island.idleItem
 
+  readonly property bool extras: island.assistantFace
+
+  OmarchyAvatar {
+    id: avatar
+    visible: face.extras
+    anchors.left: parent.left
+    anchors.leftMargin: island.s(8)
+    anchors.verticalCenter: parent.verticalCenter
+    width: island.s(22)
+    height: width
+    mood: island.avatarMood
+    base: island.fg
+    accent: island.accentColor
+    glow: island.avatarGlow
+    alert: island.orangeColor
+    ink: island.surface
+    good: island.greenColor
+    lookX: island.lookX
+    lookY: island.lookY
+    onPoked: island.openWorkspace("")
+  }
+
+  PlanPill {
+    id: plan
+    visible: face.extras && island.showPlanPill && headline !== null
+    anchors.right: parent.right
+    anchors.rightMargin: island.s(7)
+    anchors.verticalCenter: parent.verticalCenter
+    island: face.island
+  }
+
   Flip {
     anchors.fill: parent
+    anchors.leftMargin: avatar.visible ? avatar.width + island.s(10) : 0
+    anchors.rightMargin: plan.visible ? plan.width + island.s(8) : 0
     visible: face.mode === "ticker" || face.mode === "clock"
     text: face.item ? face.item.text : ""
     color: face.item && face.item.color ? face.item.color : Util.alpha(island.fg, 0.9)
