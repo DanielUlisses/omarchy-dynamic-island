@@ -47,6 +47,13 @@ function activities(flags) {
   var out = []
   for (var i = 0; i < activityOrder.length; i++)
     if (flags[activityOrder[i]]) out.push(activityOrder[i])
+  // A meeting that has started takes the pill from everything but a
+  // recording; what it displaced moves to the bubble.
+  var c = out.indexOf("calendar")
+  if (flags.calendarStarted && c > 0) {
+    out.splice(c, 1)
+    out.splice(out[0] === "recording" ? 1 : 0, 0, "calendar")
+  }
   return out
 }
 

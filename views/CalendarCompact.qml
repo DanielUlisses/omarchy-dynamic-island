@@ -7,7 +7,7 @@ Item {
 
   property var island: null
   readonly property var cal: island.calendar
-  readonly property bool started: cal.next && cal.next.start <= cal.now
+  readonly property bool started: cal.started
 
   Text {
     id: glyph

@@ -23,7 +23,7 @@ backlight, and `gpu-screen-recorder` for recording.
 | Microphone / camera in use | Mic glyph and an orange dot; for the camera, a camera glyph and a green dot |
 | Timer | A ring that fills as time runs out, and the time left. At zero a message and an alarm sound |
 | Stopwatch | The running time. It keeps going across restarts |
-| Next meeting | 15 minutes before an event: the title scrolling past and a countdown, then a "Starting now" message |
+| Next meeting | 15 minutes before an event: the title scrolling past and a countdown, then a "Starting now" message. Once it starts it turns red and takes the pill (music moves to the bubble), and joining the call from the island pauses the music |
 | Script activities | Any script can put a live activity in the island: glyph, progress ring, value, title |
 | Coding agents | [herdr](https://herdr.dev) agents here and on your saved SSH machines: the most urgent one's task and state ("needs you", "done", "working"), a toast when one needs you or finishes, and a click to land on it |
 | Bluetooth devices | Headphones, speakers, keyboards, mice, controllers: the device's name and battery when it connects, and a message when it disconnects |

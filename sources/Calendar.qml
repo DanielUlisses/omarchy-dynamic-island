@@ -263,6 +263,7 @@ Item {
   // Within two hours: enough to take the bubble from the agents (Island.qml).
   readonly property bool upcoming: next !== null && next.start - now <= 2 * 3600000
     && now - next.start < 5 * 60000
+  readonly property bool started: next !== null && next.start <= now
   readonly property string countdown: next ? Model.untilText(next.start, now) : ""
 
   property string announced: ""

@@ -57,7 +57,8 @@ Item {
     font.family: island.fontFamily
     font.pixelSize: view.kind === "timer" || view.kind === "activity" ? island.f(11) : island.f(15)
     color: view.kind === "timer" ? island.orangeColor
-      : (view.kind === "activity" && island.activity ? island.toneFor(island.activity.color) : island.accentColor)
+      : (view.kind === "activity" && island.activity ? island.toneFor(island.activity.color)
+        : (view.kind === "calendar" && island.calendar.started ? island.urgentColor : island.accentColor))
   }
 
   // Herdr agents: the robot, in the colour of the most urgent one.

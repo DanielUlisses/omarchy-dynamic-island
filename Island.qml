@@ -948,7 +948,11 @@ Item {
 
   // A meeting: its link opens in the browser profile / launcher set for its
   // calendar (see Calendar.open).
+  // Joining a call pauses whatever is playing.
   function openEvent(ev) {
+    if (ev && ev.url)
+      for (var i = 0; i < players.length; i++)
+        if (players[i].isPlaying && players[i].canPause) players[i].pause()
     calendarSource.open(ev)
     collapse()
   }
@@ -1177,6 +1181,7 @@ Item {
     stopwatch: stopwatchActivity,
     activity: scriptActivity,
     calendar: calendarActivity,
+    calendarStarted: calendarActivity && calendarSource.started,
     agents: agentsActivity
   })
   readonly property var activitySlots: Model.slots(activityList, calendarSource.soon ? [] : ["calendar"])
