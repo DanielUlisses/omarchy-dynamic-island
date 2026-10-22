@@ -65,6 +65,20 @@ test("install registers a profile per Claude login, once, and secretaryPath come
     fs.writeFileSync(path.join(home, ".config", "omarchy", "shell.json"),
       JSON.stringify({ plugins: [{ id: "omarchy-dynamic-island", secretaryPath: "~/work/secretary" }] }));
     assert.equal(am.secretaryPath(), path.join(home, "work", "secretary"));
+
+    // Chat defaults: Secretary only with a CLAUDE.md there; chatModel only where the profile has it.
+    const claude = am.profile("claude")!, ollama = am.profile("ollama")!;
+    assert.deepEqual(am.chatDefaults(), { workspace: "island", model: "" });
+    assert.equal(am.chatModelFor(claude), "claude-opus-5-5");
+    await new Promise((r) => setTimeout(r, 20));
+    fs.writeFileSync(path.join(home, ".config", "omarchy", "shell.json"),
+      JSON.stringify({ plugins: [{ id: "omarchy-dynamic-island", secretaryPath: "~/work/secretary", chatWorkspace: "secretary", chatModel: "claude-sonnet-5-5" }] }));
+    assert.equal(am.chatDefaults().workspace, "island");
+    fs.mkdirSync(path.join(home, "work", "secretary"), { recursive: true });
+    fs.writeFileSync(path.join(home, "work", "secretary", "CLAUDE.md"), "");
+    assert.deepEqual(am.chatDefaults(), { workspace: "secretary", model: "claude-sonnet-5-5" });
+    assert.equal(am.chatModelFor(claude), "claude-sonnet-5-5");
+    assert.notEqual(am.chatModelFor(ollama), "claude-sonnet-5-5");
   } finally {
     process.env.HOME = prev.HOME;
     if (prev.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = prev.XDG_CONFIG_HOME;

@@ -2,6 +2,8 @@
 # island-ctl: drive the island's assistant from a keybind or a terminal.
 #
 #   island-ctl chat                 open/close Island Chat
+#   island-ctl home | usage         open/close the workspace on Home / Plans
+#   island-ctl calendar             open/close the calendar
 #   island-ctl agents | plans | settings   open/close the workspace on that tab
 #   island-ctl approve | always | deny
 #                                   answer the oldest waiting permission request
@@ -22,10 +24,13 @@ command -v island-hook >/dev/null 2>&1 && [ ! -x "$hook" ] && hook="$(command -v
 island() { omarchy-shell dynamic-island "$@" 2>/dev/null; }
 rpc() { "$hook" --rpc "$@"; }
 
-# Defaults: SUPER + A for chat, SUPER + ALT + a letter for the rest. Each one
-# is skipped if Hyprland already binds that key.
+# Defaults: SUPER + A for chat, SUPER + SHIFT + A for Home, SUPER + ALT + a
+# letter for the rest. Each one is skipped if Hyprland already binds that key.
 BINDS=(
   "SUPER + A|Island Chat|chat"
+  "SUPER + SHIFT + A|Island agent home|home"
+  "SUPER + ALT + U|Island usage|usage"
+  "SUPER + ALT + C|Island calendar|calendar"
   "SUPER + ALT + Y|Allow the waiting agent request|approve"
   "SUPER + ALT + N|Deny the waiting agent request|deny"
   "SUPER + ALT + J|Jump to the agent that needs you|jump"
@@ -106,6 +111,9 @@ keybinds() {
 case "${1:-}" in
   chat) island toggleChat ;;
   agents|plans|settings) island workspace "$1" ;;
+  home) island workspace agents ;;
+  usage) island workspace plans ;;
+  calendar) island toggleCalendar ;;
   workspace) island workspace "${2:-}" ;;
   approve|allow) decide approve allow ;;
   always) decide alwaysAllow always_allow ;;
@@ -118,6 +126,6 @@ case "${1:-}" in
     rpc accounts.setActive "$(jq -nc --arg id "$2" '{id:$id}')" ;;
   state) island assistantState || rpc state.get ;;
   keybinds) shift; keybinds "$@" ;;
-  ""|-h|--help|help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+  ""|-h|--help|help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "unknown command: $1 (island-ctl --help)" >&2; exit 2 ;;
 esac

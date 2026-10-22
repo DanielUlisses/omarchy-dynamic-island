@@ -1162,7 +1162,10 @@ Item {
   readonly property bool timerActivity: clockSource.timerActive
   readonly property bool stopwatchActivity: clockSource.stopwatchActive
   readonly property bool scriptActivity: activitySource.current !== null
-  readonly property bool calendarActivity: setting("calendar", true) !== false && calendarSource.soon
+  // With music in the pill, the next meeting takes the bubble from the agents
+  // two hours out instead of only in the last `calendarLeadMinutes`.
+  readonly property bool calendarActivity: setting("calendar", true) !== false
+    && (calendarSource.soon || (mediaActivity && calendarSource.upcoming))
   readonly property bool agentsActivity: herdrSource.live.length > 0
 
   readonly property var activityList: Model.activities({
@@ -1538,6 +1541,10 @@ Item {
       return "no meeting"
     }
     function calendar(): string { root.openCalendar(); return "ok" }
+    function toggleCalendar(): string {
+      if (root.view === "calendar-expanded") { root.collapse(); return "closed" }
+      root.openCalendar(); return "open"
+    }
     function calendarSettings(): string { root.openCalendar(); root.calendarAdding = true; return "ok" }
     function addCalendar(link: string): string { root.addCalendar(link); return "ok" }
     function removeCalendar(link: string): string { root.removeCalendar(link); return "ok" }

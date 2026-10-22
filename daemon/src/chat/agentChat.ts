@@ -95,13 +95,22 @@ export class AgentChat extends EventEmitter {
 
   constructor(private readonly ctx: ToolContext & { accounts: AccountManager; store: SessionStore; herdr: HerdrBridge }) {
     super();
+    this.workspace = ctx.accounts.chatDefaults().workspace;
+  }
+
+  /** The chosen profile, else the default account, else the first Claude login. */
+  private profile(): Profile | undefined {
+    return this.ctx.accounts.profile(this.profileId) ?? this.ctx.accounts.active
+      ?? this.ctx.accounts.file.profiles.find((p) => p.kind === "claude");
   }
 
   private changed(): void { this.emit("change"); }
 
   snapshot(): unknown {
     return {
-      busy: this.busy, profileId: this.profileId, model: this.model, workspace: this.workspace, error: this.error,
+      busy: this.busy, profileId: this.profileId, workspace: this.workspace, error: this.error,
+      // No pick yet: the model the next message will use.
+      model: this.model || (() => { const p = this.profile(); return p ? this.ctx.accounts.chatModelFor(p) : ""; })(),
       messages: this.messages.slice(-40),
     };
   }
@@ -130,11 +139,10 @@ export class AgentChat extends EventEmitter {
 
   async send(text: string, files: string[]): Promise<void> {
     if (this.busy) throw new Error("still answering");
-    const profile = this.ctx.accounts.profile(this.profileId) ?? this.ctx.accounts.active
-      ?? this.ctx.accounts.file.profiles.find((p) => p.kind === "claude");
+    const profile = this.profile();
     if (!profile) throw new Error("no account configured (accounts.json)");
     this.profileId = profile.id;
-    if (!this.model) this.model = profile.defaultModel || (profile.kind === "ollama" ? profile.models?.[0] ?? "" : "claude-opus-5-5");
+    if (!this.model) this.model = this.ctx.accounts.chatModelFor(profile);
     const binding = `${profile.id}|${this.workspace}`;
     if (binding !== this.boundTo) { this.sdkSession = ""; this.apiHistory = []; this.ollamaHistory = []; this.boundTo = binding; }
 

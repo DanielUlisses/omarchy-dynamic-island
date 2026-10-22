@@ -138,6 +138,8 @@ apply as soon as you save the file.
 | `avatarTracking` | `true` | The avatar's eyes follow the pointer while it is on screen |
 | `approvalCard` | `true` | Open the island by itself when an agent asks for permission or asks a question |
 | `secretaryPath` | `"~/secretary"` | Your [secretary](#secretary) checkout, for Island Chat's Secretary workspace |
+| `chatWorkspace` | `"island"` | Where Island Chat starts: `"island"` or `"secretary"` (needs a CLAUDE.md in `secretaryPath`) |
+| `chatModel` | `""` | The model Island Chat starts on, e.g. `"claude-sonnet-5-5"`, when the account offers it; empty for the account's default |
 | `clockFormat` | `"h:mm AP"` | Qt date format for the expanded clock |
 | `mediaLingerSeconds` | `30` | How long a paused track stays in the island |
 | `notchWidth`, `notchHeight`, `notchRadius` | `0` | Fit a real display cutout: see below |
@@ -344,6 +346,9 @@ again, and Island Chat takes the key.
 | Key | Does |
 |---|---|
 | `SUPER + A` | Open or close Island Chat |
+| `SUPER + SHIFT + A` | Open or close the workspace on Home |
+| `SUPER + ALT + U` | Open or close the workspace on Plans (usage) |
+| `SUPER + ALT + C` | Open or close the calendar |
 | `SUPER + ALT + Y` | Allow the waiting request |
 | `SUPER + ALT + N` | Deny the waiting request |
 | `SUPER + ALT + J` | Jump to the agent that needs you |
@@ -351,6 +356,7 @@ again, and Island Chat takes the key.
 
 ```bash
 island-ctl chat | agents | plans | settings   # open (or close) the workspace on a tab
+island-ctl home | usage | calendar   # Home, Plans, the calendar
 island-ctl approve | always | deny   # the oldest waiting request; works with the island down
 island-ctl jump | pin | capture
 island-ctl attach ~/notes.md         # attach a file to Island Chat

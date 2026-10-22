@@ -37,7 +37,8 @@ Item {
     var i = -1
     for (var k = 0; k < list.length; k++) if (account && list[k].id === account.id) i = k
     var next = list[(i + 1) % list.length]
-    assistant.chatConfigure({ profileId: next.id, model: next.defaultModel || (next.models.length ? next.models[0] : "") })
+    // No model: the daemon starts it on the chatModel setting, or the account's default.
+    assistant.chatConfigure({ profileId: next.id, model: "" })
   }
 
   function cycleModel() {

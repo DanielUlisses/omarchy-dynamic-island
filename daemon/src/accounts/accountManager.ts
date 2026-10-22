@@ -427,6 +427,25 @@ export class AccountManager extends EventEmitter {
     return expandHome(typeof v === "string" && v.trim() ? v.trim() : "~/secretary");
   }
 
+  /**
+   * Where Island Chat starts: "chatWorkspace" ("island" | "secretary") and
+   * "chatModel" from the island's shell.json entry. Secretary falls back to
+   * the island when the folder has no CLAUDE.md.
+   */
+  chatDefaults(): { workspace: "island" | "secretary"; model: string } {
+    const s = islandSettings();
+    const secretary = s.chatWorkspace === "secretary" && fs.existsSync(path.join(this.secretaryPath(), "CLAUDE.md"));
+    return { workspace: secretary ? "secretary" : "island", model: typeof s.chatModel === "string" ? s.chatModel.trim() : "" };
+  }
+
+  /** The model a chat on this profile starts on: chatModel when the profile has it, else its own default. */
+  chatModelFor(p: Profile): string {
+    const models = p.kind === "claude" || p.kind === "anthropic-api" ? (p.models?.length ? p.models : CLAUDE_MODELS) : (p.models ?? []);
+    const wanted = this.chatDefaults().model;
+    if (wanted && models.includes(wanted)) return wanted;
+    return p.defaultModel || (p.kind === "ollama" ? models[0] ?? "" : "claude-opus-5-5");
+  }
+
   /** What the island shows: every profile with its numbers and how many sessions run on it. */
   snapshot(sessionsByDir: Record<string, number>): unknown[] {
     return this.file.profiles.map((p) => {

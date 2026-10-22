@@ -260,6 +260,9 @@ Item {
   // Live activity from `leadMinutes` before until 5 minutes after it starts.
   readonly property bool soon: next !== null && next.start - now <= leadMinutes * 60000
     && now - next.start < 5 * 60000
+  // Within two hours: enough to take the bubble beside the music (Island.qml).
+  readonly property bool upcoming: next !== null && next.start - now <= 2 * 3600000
+    && now - next.start < 5 * 60000
   readonly property string countdown: next ? Model.untilText(next.start, now) : ""
 
   property string announced: ""
