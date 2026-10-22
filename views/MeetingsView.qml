@@ -13,6 +13,7 @@ Item {
   readonly property var assistant: island.assistant
   readonly property var meetings: assistant.meetings
   property string confirming: ""
+  Timer { id: confirmReset; interval: 3000; onTriggered: view.confirming = "" }
 
   // Headings and rows in one flat list: groups ordered by their newest meeting.
   readonly property var items: {
@@ -149,53 +150,51 @@ Item {
           anchors.rightMargin: island.s(6)
           anchors.verticalCenter: parent.verticalCenter
 
+          // A fixed list: rebuilding it while a button is hovered would fire its "exited".
           Repeater {
-            model: entry.m ? [
-              { glyph: "󰦨", tip: "summary", on: entry.m.hasSummary },
-              { glyph: "󰈙", tip: "transcript", on: true },
-              { glyph: "󰭹", tip: "ask", on: true },
-              { glyph: "󰄬", tip: "todos", on: true },
-              { glyph: view.confirming === entry.m.id ? "󰆴 ?" : "󰆴", tip: "delete", on: true }
-            ] : []
+            model: ["summary", "transcript", "ask", "todos", "delete"]
             delegate: Item {
               id: act
-              required property var modelData
-              readonly property bool danger: modelData.tip === "delete"
-              visible: modelData.on
-              width: modelData.on ? island.s(act.danger && view.confirming === entry.m.id ? 40 : 28) : 0
+              required property string modelData
+              readonly property bool danger: modelData === "delete"
+              readonly property bool armed: danger && !!entry.m && view.confirming === entry.m.id
+              readonly property bool on: modelData !== "summary" || (!!entry.m && entry.m.hasSummary)
+              readonly property string glyph: ({ summary: "󰦨", transcript: "󰈙", ask: "󰭹", todos: "󰄬", "delete": armed ? "󰆴 ?" : "󰆴" })[modelData]
+              visible: on
+              width: on ? island.s(armed ? 40 : 28) : 0
               height: island.s(28)
 
               Rectangle {
                 anchors.fill: parent
                 radius: height / 2
-                color: act.danger && view.confirming === entry.m.id ? Util.alpha(island.urgentColor, 0.22)
+                color: act.armed ? Util.alpha(island.urgentColor, 0.22)
                   : Util.alpha(island.fg, actMouse.containsMouse ? 0.12 : 0)
               }
               Text {
                 anchors.centerIn: parent
-                text: act.modelData.glyph
+                text: act.glyph
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 font.family: island.fontFamily
                 font.pixelSize: island.f(13)
                 color: act.danger ? island.urgentColor : island.fg
-                opacity: actMouse.containsMouse || (act.danger && view.confirming === entry.m.id) ? 1 : 0.7
+                opacity: actMouse.containsMouse || act.armed ? 1 : 0.7
               }
               MouseArea {
                 id: actMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onEntered: view.hint = view.tips[act.modelData.tip]
-                onExited: { view.hint = ""; if (act.danger) view.confirming = "" }
+                onEntered: view.hint = view.tips[act.modelData]
+                onExited: view.hint = ""
                 onClicked: {
-                  var m = entry.m, t = act.modelData.tip
-                  if (t === "summary") island.openLink("file://" + m.summary)
-                  else if (t === "transcript") island.openLink("file://" + m.transcript)
+                  var m = entry.m, t = act.modelData
+                  if (t === "summary") island.openMarkdown(m.summary)
+                  else if (t === "transcript") island.openMarkdown(m.transcript)
                   else if (t === "ask") view.ask(m, "")
                   else if (t === "todos") view.ask(m, "From this meeting transcript, list the decisions, the action items with who owns each, and any open questions. Answer in the language of the meeting.")
                   else if (view.confirming === m.id) { view.confirming = ""; view.assistant.deleteMeeting(m.id) }
-                  else view.confirming = m.id
+                  else { view.confirming = m.id; confirmReset.restart() }
                 }
               }
             }

@@ -953,6 +953,14 @@ Item {
     if (!clipboardRead.running) clipboardRead.running = true
   }
 
+  // A Markdown file (a meeting's summary or transcript): the "markdownEditor" setting (default
+  // Typora), else whatever xdg-open picks.
+  function openMarkdown(file) {
+    var editor = String(setting("markdownEditor", "typora") || "typora")
+    Quickshell.execDetached(["sh", "-c", 'command -v "$1" >/dev/null 2>&1 && exec "$1" "$2" || exec xdg-open "$2"', "sh", editor, String(file)])
+    collapse()
+  }
+
   function openLink(url) {
     Quickshell.execDetached(["xdg-open", String(url)])
     collapse()

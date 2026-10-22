@@ -155,6 +155,7 @@ apply as soon as you save the file.
 | `timerSound` | `true` | Play the alarm sound when a timer ends |
 | `transcription` | `true` | The calendar's 󰍬 button: transcribe a meeting on this machine with [voxtype](https://voxtype.io)'s meeting mode (your mic plus the speakers' PipeWire monitor, no bot on the call). Stopping writes `<date>-<title>.transcript.md` and `.summary.md` (summary by the Ollama model set in voxtype's `[meeting.summary]`) |
 | `transcribeOnJoin` | `false` | Start transcribing when a meeting is joined from the island |
+| `markdownEditor` | `"typora"` | What opens a meeting's summary and transcript (falls back to `xdg-open` when it isn't installed) |
 | `meetingsDir` | `~/.local/share/omarchy-dynamic-island/meetings` | Where those files go |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
 | `herdr` | `true` | Show herdr agents (see below) |

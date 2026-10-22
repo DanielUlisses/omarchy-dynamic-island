@@ -321,7 +321,7 @@ Item {
           height: width
           radius: width / 2
           color: eventRow.transcribing ? Util.alpha(island.urgentColor, 0.2)
-            : Util.alpha(island.fg, micMouse.containsMouse ? 0.14 : 0)
+            : Util.alpha(island.accentColor, micMouse.containsMouse ? 0.3 : 0.16)
 
           Text {
             anchors.centerIn: parent
@@ -330,8 +330,8 @@ Item {
             renderType: Text.NativeRendering
             font.family: island.fontFamily
             font.pixelSize: island.f(12)
-            color: eventRow.transcribing || island.transcription.finishing ? island.urgentColor : island.fg
-            opacity: island.transcription.finishing ? 0.4 : (eventRow.transcribing ? 1 : 0.8)
+            color: eventRow.transcribing || island.transcription.finishing ? island.urgentColor : island.accentColor
+            opacity: island.transcription.finishing ? 0.4 : 1
           }
 
           MouseArea {
