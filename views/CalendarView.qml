@@ -258,6 +258,10 @@ Item {
         id: eventRow
         required property var modelData
         readonly property bool past: !modelData.allDay && modelData.end < Date.now()
+        // Transcribe a meeting that is on now (or about to be) or the one already being recorded.
+        readonly property bool canTranscribe: island.transcription.available && !modelData.allDay && !past
+          && (modelData.start - Date.now() < 15 * 60 * 1000 || island.transcription.active)
+        readonly property bool transcribing: island.transcription.active && island.transcription.title === (modelData.title || "Meeting")
         width: ListView.view.width
         height: island.s(40)
         radius: island.s(12)
@@ -276,7 +280,7 @@ Item {
         Column {
           x: island.s(18)
           anchors.verticalCenter: parent.verticalCenter
-          width: parent.width - x - island.s(26)
+          width: parent.width - x - island.s(26) - (eventRow.canTranscribe ? island.s(26) : 0)
           spacing: island.s(1)
 
           Text {
@@ -303,6 +307,39 @@ Item {
             font.family: island.textFamily
             font.pixelSize: island.f(10)
             color: island.fgDim
+          }
+        }
+
+        // Transcribe on this machine: mic + speakers, Whisper, summary by Ollama.
+        Rectangle {
+          id: micButton
+          visible: eventRow.canTranscribe
+          anchors.right: parent.right
+          anchors.rightMargin: eventRow.modelData.url ? island.s(30) : island.s(8)
+          anchors.verticalCenter: parent.verticalCenter
+          width: island.s(24)
+          height: width
+          radius: width / 2
+          color: eventRow.transcribing ? Util.alpha(island.urgentColor, 0.2)
+            : Util.alpha(island.fg, micMouse.containsMouse ? 0.14 : 0)
+
+          Text {
+            anchors.centerIn: parent
+            text: eventRow.transcribing ? "󰓛" : "󰍬"
+            textFormat: Text.PlainText
+            renderType: Text.NativeRendering
+            font.family: island.fontFamily
+            font.pixelSize: island.f(12)
+            color: eventRow.transcribing || island.transcription.finishing ? island.urgentColor : island.fg
+            opacity: island.transcription.finishing ? 0.4 : (eventRow.transcribing ? 1 : 0.8)
+          }
+
+          MouseArea {
+            id: micMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: if (!island.transcription.finishing) island.transcription.toggle(eventRow.modelData.title)
           }
         }
 

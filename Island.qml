@@ -717,12 +717,14 @@ Item {
   Activities { id: activitySource; island: root }
   Herdr { id: herdrSource; island: root }
   Assistant { id: assistantSource; island: root }
+  Transcription { id: transcriptionSource; island: root }
 
   readonly property var clocks: clockSource
   readonly property var calendar: calendarSource
   readonly property var activity: activitySource.current
   readonly property var agents: herdrSource
   readonly property var assistant: assistantSource
+  readonly property var transcription: transcriptionSource
 
   // Land on a herdr agent (a row in the list, or the agent a toast is about).
   function openAgent(agent) {
@@ -767,6 +769,16 @@ Item {
 
   // Chat and Settings have text fields: keys on demand, and no closing
   // when the pointer leaves.
+  // SUPER + A grabs the keyboard so typing lands in the chat, not the terminal behind it. Dropping
+  // back to on-demand at once would hand focus back to that window, so the grab is held until the
+  // chat closes, or the pointer has been on the island and left it (then clicking elsewhere works).
+  property bool chatGrab: false
+  property bool grabHovered: false
+  function updateChatGrab() {
+    if (hovered) grabHovered = true
+    else if (grabHovered) { grabHovered = false; chatGrab = false }
+  }
+  onChatTypingChanged: if (!chatTyping) { chatGrab = false; grabHovered = false }
   readonly property bool chatTyping: view === "workspace-expanded" && (workspaceTab === "chat" || workspaceTab === "settings")
   readonly property string avatarMood: Model.avatarMood({
     approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying,
@@ -954,6 +966,7 @@ Item {
       for (var i = 0; i < players.length; i++)
         if (players[i].isPlaying && players[i].canPause) players[i].pause()
     calendarSource.open(ev)
+    if (setting("transcribeOnJoin", false) === true && ev && ev.url) transcriptionSource.start(ev.title)
     collapse()
   }
 
@@ -1284,6 +1297,7 @@ Item {
   }
 
   onHoveredChanged: {
+    updateChatGrab()
     if (hovered) {
       collapseTimer.stop()
       if (expandOnHover) hoverExpandTimer.restart()
@@ -1515,13 +1529,19 @@ Item {
     function refreshAgents(): string { herdrSource.refresh(); return "ok" }
 
     // Assistant (scripts/island-ctl wraps these).
-    // workspace agents | plans | chat | settings; toggles when it is already open there.
+    // workspace agents | plans | chat | meetings | settings; toggles when it is already open there.
     function workspace(tab: string): string {
-      var t = ["agents", "plans", "chat", "settings"].indexOf(tab) !== -1 ? tab : ""
+      var t = ["agents", "plans", "chat", "meetings", "settings"].indexOf(tab) !== -1 ? tab : ""
       root.openWorkspace(t)
       return root.workspaceOpen ? root.workspaceTab : "closed"
     }
-    function toggleChat(): string { return workspace("chat") }
+    // SUPER + A: a fresh chat starts on the defaults (Secretary, Sonnet, the default account),
+    // and typing goes straight in.
+    function toggleChat(): string {
+      var opening = !(root.view === "workspace-expanded" && root.workspaceTab === "chat")
+      if (opening) { assistantSource.chatDefaults(); root.chatGrab = true; root.grabHovered = false }
+      return workspace("chat")
+    }
     // The oldest waiting request: allow | always | deny.
     function approve(): string { return root.decideFirst("allow") }
     function alwaysAllow(): string { return root.decideFirst("always_allow") }
@@ -1545,6 +1565,15 @@ Item {
         if (list[i].url && list[i].end > Date.now()) { root.openEvent(list[i]); return list[i].title || "ok" }
       return "no meeting"
     }
+    // Start or stop transcribing a meeting on this machine (voxtype).
+    function transcribe(): string {
+      var now = Date.now(), list = root.calendar.events, title = ""
+      for (var i = 0; i < list.length; i++)
+        if (!list[i].allDay && list[i].start <= now && list[i].end > now) { title = list[i].title; break }
+      var was = root.transcription.active
+      root.transcription.toggle(title)
+      return was ? "stopping" : "recording"
+    }
     function calendar(): string { root.openCalendar(); return "ok" }
     function toggleCalendar(): string {
       if (root.view === "calendar-expanded") { root.collapse(); return "closed" }
@@ -1563,6 +1592,7 @@ Item {
         hud: root.hud ? root.hud.layout : null,
         media: { has: root.hasMedia, playing: root.mediaPlaying, title: root.mediaTitle },
         recording: root.recordingActivity,
+        transcribing: root.transcription.phase,
         mic: root.micActivity,
         battery: root.hasBattery ? Math.round(root.batteryLevel * 100) : null,
         brightness: root.brightness,
@@ -1650,7 +1680,7 @@ Item {
     // Ctrl+V go straight in; Esc hands it back). Otherwise the island never
     // takes focus from the app you're in.
     // Island Chat takes keys on demand (when its field is clicked or opened).
-    WlrLayershell.keyboardFocus: root.calendarTyping ? WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.calendarTyping || (root.chatGrab && root.chatTyping) ? WlrKeyboardFocus.Exclusive
       : (root.chatTyping ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
     exclusionMode: root.reserveSpace ? ExclusionMode.Normal : ExclusionMode.Ignore
     exclusiveZone: root.reserveSpace ? root.s(32) + root.topMargin : 0

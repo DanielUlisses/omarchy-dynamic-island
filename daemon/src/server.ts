@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import type { AccountManager } from "./accounts/accountManager.js";
 import type { AgentChat } from "./chat/agentChat.js";
+import { deleteMeeting, listMeetings } from "./meetings/meetings.js";
 import type { HerdrBridge } from "./herdr/herdrBridge.js";
 import {
   asObject, asString, encode, LineSplitter, RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND, RPC_PARSE_ERROR,
@@ -188,6 +189,10 @@ export class IslandServer {
         return { pane };
       }
 
+      case "meetings.list": return { meetings: listMeetings() };
+      case "meetings.delete": return { removed: await deleteMeeting(asString(p.id)) };
+
+      case "chat.defaults": chat.useDefaults(); return {};
       case "chat.configure":
         chat.configure({
           profileId: typeof p.profileId === "string" ? p.profileId : undefined,

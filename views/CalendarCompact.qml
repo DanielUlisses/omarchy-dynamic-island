@@ -14,12 +14,12 @@ Item {
     anchors.left: parent.left
     anchors.leftMargin: island.s(13)
     anchors.verticalCenter: parent.verticalCenter
-    text: "󰃭"
+    text: view.island.transcription.active ? "󰍬" : "󰃭"
     textFormat: Text.PlainText
     renderType: Text.NativeRendering
     font.family: island.fontFamily
     font.pixelSize: island.f(15)
-    color: view.started ? island.urgentColor : island.accentColor
+    color: view.started || view.island.transcription.active ? island.urgentColor : island.accentColor
   }
 
   Text {

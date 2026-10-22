@@ -15,6 +15,7 @@ import { toUnified } from "../diff/diffEngine.js";
 import type { HerdrBridge } from "../herdr/herdrBridge.js";
 import type { SessionStore } from "../store/sessionStore.js";
 import type { AccountManager } from "../accounts/accountManager.js";
+import { listMeetings, meetingsDir } from "../meetings/meetings.js";
 
 export interface ToolContext {
   store: SessionStore;
@@ -40,7 +41,113 @@ function git(repo: string, args: string[]): Promise<{ code: number; out: string 
   });
 }
 
+const expand = (p: string): string => path.resolve(p.replace(/^~(?=\/|$)/, os.homedir()));
+
+/** Files under `root` (depth-limited, skipping dot-directories and node_modules) with their sizes. */
+function walk(root: string, recursive: boolean, out: { file: string; bytes: number; mtime: number }[], depth = 0): void {
+  if (out.length >= 20_000 || depth > 8) return;
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const full = path.join(root, e.name);
+    if (e.isDirectory()) {
+      if (recursive && !e.name.startsWith(".") && e.name !== "node_modules") walk(full, recursive, out, depth + 1);
+    } else if (e.isFile()) {
+      try { const st = fs.statSync(full); out.push({ file: full, bytes: st.size, mtime: st.mtimeMs }); } catch { /* vanished */ }
+    }
+  }
+}
+
 export const TOOLS: IslandTool[] = [
+  {
+    name: "files_list",
+    description: "List files in a directory on this computer with their sizes, to answer questions like 'the largest files in ~/Downloads that are not PDFs'. " +
+      "Filter by extension, sort by size, name or modified time. Read-only.",
+    shape: {
+      dir: z.string().min(1).describe("absolute directory, or ~/…"),
+      recursive: z.boolean().optional().describe("include subdirectories (default false)"),
+      include_ext: z.array(z.string().max(12)).max(30).optional().describe("only these extensions, e.g. ['pdf','png']"),
+      exclude_ext: z.array(z.string().max(12)).max(30).optional().describe("skip these extensions"),
+      sort: z.enum(["size", "name", "modified"]).optional().describe("default size, largest first"),
+      limit: z.number().int().min(1).max(200).optional().describe("default 30"),
+    },
+    readOnly: true,
+    async run(a) {
+      const dir = expand(String(a.dir));
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`no such directory: ${dir}`);
+      const ext = (l: unknown) => new Set((Array.isArray(l) ? l : []).map((x) => String(x).replace(/^\./, "").toLowerCase()));
+      const only = ext(a.include_ext), skip = ext(a.exclude_ext);
+      const all: { file: string; bytes: number; mtime: number }[] = [];
+      walk(dir, a.recursive === true, all);
+      const rows = all.filter((f) => {
+        const e = path.extname(f.file).slice(1).toLowerCase();
+        return (only.size === 0 || only.has(e)) && !skip.has(e);
+      });
+      const by = a.sort ?? "size";
+      rows.sort((x, y) => by === "name" ? x.file.localeCompare(y.file) : by === "modified" ? y.mtime - x.mtime : y.bytes - x.bytes);
+      const top = rows.slice(0, Number(a.limit ?? 30));
+      const mb = (b: number) => (b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
+      return `${rows.length} matching files in ${dir}${a.recursive ? " (recursive)" : ""}:\n` +
+        top.map((f) => `${mb(f.bytes)}\t${f.file}`).join("\n");
+    },
+  },
+  {
+    name: "file_read",
+    description: "Read a text file on this computer (cut at 40 KB; use offset to continue). Read-only.",
+    shape: { file: z.string().min(1), offset: z.number().int().min(0).optional().describe("byte offset to start at") },
+    readOnly: true,
+    async run(a) {
+      const file = expand(String(a.file));
+      const st = fs.statSync(file);
+      if (!st.isFile()) throw new Error(`not a file: ${file}`);
+      const fd = fs.openSync(file, "r");
+      try {
+        const buf = Buffer.alloc(Math.min(40_000, Math.max(0, st.size - Number(a.offset ?? 0))));
+        fs.readSync(fd, buf, 0, buf.length, Number(a.offset ?? 0));
+        if (buf.includes(0)) return `${file} looks binary (${st.size} bytes).`;
+        const end = Number(a.offset ?? 0) + buf.length;
+        return buf.toString("utf8") + (end < st.size ? `\n[${st.size - end} more bytes; continue with offset ${end}]` : "");
+      } finally { fs.closeSync(fd); }
+    },
+  },
+  {
+    name: "run_command",
+    description: "Run a shell command on this computer and return its output (60 s limit). Prefer files_list / file_read for looking at files. Asks the user first.",
+    shape: { command: z.string().min(1).max(4000), cwd: z.string().optional().describe("directory to run in, default home") },
+    readOnly: false,
+    async run(a) {
+      const cwd = a.cwd ? expand(String(a.cwd)) : os.homedir();
+      return await new Promise<string>((resolve) => {
+        execFile("bash", ["-lc", String(a.command)], { cwd, timeout: 60_000, maxBuffer: 2 * 1024 * 1024 }, (err, stdout, stderr) => {
+          const out = (String(stdout) + String(stderr)).trim();
+          resolve((err && "code" in err ? `exit ${String((err as { code?: unknown }).code)}\n` : "") + (out.length > 20_000 ? out.slice(-20_000) : out));
+        });
+      });
+    },
+  },
+  {
+    name: "meetings_list",
+    description: "List the meetings the user transcribed on this machine (newest first): id, title, date, duration and whether it has a summary.",
+    shape: {},
+    readOnly: true,
+    async run() {
+      const rows = listMeetings().slice(0, 50);
+      if (rows.length === 0) return "No meetings transcribed yet.";
+      return rows.map((m) => JSON.stringify({ meeting: m.id, title: m.title, date: new Date(m.date).toISOString(), duration: m.duration, summary: m.hasSummary })).join("\n");
+    },
+  },
+  {
+    name: "meeting_read",
+    description: "Read a transcribed meeting's summary (default) or full transcript, by the name meetings_list gave.",
+    shape: { meeting: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/), part: z.enum(["summary", "transcript"]).optional() },
+    readOnly: true,
+    async run(a) {
+      const file = path.join(meetingsDir(), `${String(a.meeting)}.${a.part === "transcript" ? "transcript" : "summary"}.md`);
+      if (!fs.existsSync(file)) return `No ${a.part ?? "summary"} for ${a.meeting}.`;
+      const text = fs.readFileSync(file, "utf8");
+      return text.length > 60_000 ? text.slice(0, 60_000) + "\n[cut]" : text;
+    },
+  },
   {
     name: "herdr_list_sessions",
     description: "List every coding agent the island knows: herdr panes on every machine merged with Claude Code hook sessions. " +

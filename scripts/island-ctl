@@ -4,7 +4,8 @@
 #   island-ctl chat                 open/close Island Chat
 #   island-ctl home | usage         open/close the workspace on Home / Plans
 #   island-ctl calendar             open/close the calendar
-#   island-ctl agents | plans | settings   open/close the workspace on that tab
+#   island-ctl transcribe          start/stop transcribing the meeting on now (voxtype)
+#   island-ctl agents | plans | meetings | settings   open/close the workspace on that tab
 #   island-ctl approve | always | deny
 #                                   answer the oldest waiting permission request
 #   island-ctl jump                 focus the herdr pane of the agent that needs you
@@ -31,6 +32,7 @@ BINDS=(
   "SUPER + SHIFT + A|Island agent home|home"
   "SUPER + ALT + U|Island usage|usage"
   "SUPER + ALT + C|Island calendar|calendar"
+  "SUPER + ALT + M|Island meetings|meetings"
   "SUPER + ALT + Y|Allow the waiting agent request|approve"
   "SUPER + ALT + N|Deny the waiting agent request|deny"
   "SUPER + ALT + J|Jump to the agent that needs you|jump"
@@ -110,10 +112,11 @@ keybinds() {
 
 case "${1:-}" in
   chat) island toggleChat ;;
-  agents|plans|settings) island workspace "$1" ;;
+  agents|plans|meetings|settings) island workspace "$1" ;;
   home) island workspace agents ;;
   usage) island workspace plans ;;
   calendar) island toggleCalendar ;;
+  transcribe) island transcribe ;;
   workspace) island workspace "${2:-}" ;;
   approve|allow) decide approve allow ;;
   always) decide alwaysAllow always_allow ;;

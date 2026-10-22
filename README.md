@@ -153,6 +153,9 @@ apply as soon as you save the file.
 | `launchers`, `calendarLaunchers`, `launcherRules`, `browserCommand` | | How meeting links open (see Calendar settings) |
 | `holidays` | `"auto"` | Public holidays: `"auto"` (from the timezone), `"off"`, or a country code |
 | `timerSound` | `true` | Play the alarm sound when a timer ends |
+| `transcription` | `true` | The calendar's 󰍬 button: transcribe a meeting on this machine with [voxtype](https://voxtype.io)'s meeting mode (your mic plus the speakers' PipeWire monitor, no bot on the call). Stopping writes `<date>-<title>.transcript.md` and `.summary.md` (summary by the Ollama model set in voxtype's `[meeting.summary]`) |
+| `transcribeOnJoin` | `false` | Start transcribing when a meeting is joined from the island |
+| `meetingsDir` | `~/.local/share/omarchy-dynamic-island/meetings` | Where those files go |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
 | `herdr` | `true` | Show herdr agents (see below) |
 | `herdrToasts` | `true` | Toast when an agent needs you or finishes |
@@ -311,7 +314,8 @@ herdr.
 | Approval card | When Claude Code asks for permission, the island opens by itself with the command or file, and **Allow**, **Always** (adds Claude's suggested rule), **Deny** and **Pane** (jump to its herdr pane). Questions (`AskUserQuestion`) show their options, one step at a time. Answering in the terminal instead works too; the card goes away |
 | Home | One agent at a time (‹ › pages through them, the one that needs you first): its avatar, what it did this turn step by step (Read ✓, Edit ✓, Bash …, Done), the file it is changing shown like an editor tab, and the last command with the tail of its output (PASS/FAIL). Every session's diffs are kept (the last 50 per session, up to 4,000 lines each) |
 | Plans | Every account's 5-hour and weekly usage, when each resets ("Resets in 1h 42m"), how many sessions use it, **Default** (new shells use it) and **herdr** (open a tab signed in to it). The pill is green below 50 %, orange to 80 % and red above |
-| Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island. Pick the model in the header. Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
+| Meetings | Everything you transcribed, grouped by meeting title, newest first. Per meeting: open the summary or transcript, **Ask** (attaches the transcript to Chat), **To-dos** (asks the agent for decisions, action items and open questions) and delete (press twice). Opens with `SUPER + ALT + M` (`island-ctl meetings`) |
+| Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island (tool-capable models such as Qwen3 get the same tools as Claude). Pick the model in the header. Hover a message and press 󰆏 to copy its text. `SUPER + A` opens a fresh chat on the defaults (Secretary, `chatModel`, the default account) with the cursor in the box; **Ctrl+A** switches Island/Secretary, **Ctrl+M** the model, **Ctrl+S** the account and **Ctrl+N** starts a new chat. Secretary runs like its `start.sh`: its `secretary.env` 1Password references are resolved once (one prompt, kept until the daemon restarts) and it has the Chrome tools Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, read your transcribed meetings, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
 
 Set it up once from a checkout:
 
@@ -349,6 +353,8 @@ again, and Island Chat takes the key.
 | `SUPER + SHIFT + A` | Open or close the workspace on Home |
 | `SUPER + ALT + U` | Open or close the workspace on Plans (usage) |
 | `SUPER + ALT + C` | Open or close the calendar |
+| `SUPER + ALT + M` | Open the Meetings tab |
+| `island-ctl transcribe` | Start or stop transcribing the meeting that is on now (not bound by default) |
 | `SUPER + ALT + Y` | Allow the waiting request |
 | `SUPER + ALT + N` | Deny the waiting request |
 | `SUPER + ALT + J` | Jump to the agent that needs you |

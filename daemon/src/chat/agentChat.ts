@@ -6,13 +6,15 @@
 //   CLAUDE_CONFIG_DIR. The Secretary workspace is the same thing started in
 //   the secretary repo, so its CLAUDE.md and skills apply.
 // - An Anthropic API profile runs a Messages API tool loop with its key.
-// - An Ollama profile talks to the local Ollama server (no tools).
+// - An Ollama profile talks to the local Ollama server, with the same tools when
+//   the model supports them (Qwen3 does) and plain conversation when it doesn't.
 //
-// Either Claude back end gets the island's own tools (tools.ts). Anything that
+// Every back end gets the island's own tools (tools.ts). Anything that
 // changes something asks first, on the same approval card hook sessions use.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createSdkMcpServer, query, tool as sdkTool, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -47,6 +49,9 @@ const ISLAND_PROMPT =
   "You are the Omarchy desktop assistant, living in the Dynamic Island at the top of the user's screen. " +
   "You can see the coding agents running in herdr panes on their machines and the Claude Code sessions reporting to the island, " +
   "read their terminals and the diffs they made, type into their panes, open new panes, and apply git patches. " +
+  "You can list and read files on this computer, and run shell commands after the user allows them. " +
+  "You can also read the meetings the user transcribed on this machine (summaries and transcripts). " +
+  "Use your tools for anything about the user's files, agents or meetings instead of guessing or telling the user to run a command. " +
   "Keep answers short: they show in a small panel. Look before you act, and say what you are about to change.";
 
 type ApiBlock = Anthropic.Beta.BetaContentBlockParam;
@@ -89,7 +94,7 @@ export class AgentChat extends EventEmitter {
   private abort: AbortController | null = null;
   private sdkSession = "";
   private apiHistory: Anthropic.Beta.BetaMessageParam[] = [];
-  private ollamaHistory: { role: string; content: string; images?: string[] }[] = [];
+  private ollamaHistory: { role: string; content: string; images?: string[]; tool_calls?: unknown[]; tool_name?: string }[] = [];
   /** What the conversation is bound to; changing any of these starts afresh. */
   private boundTo = "";
 
@@ -128,6 +133,15 @@ export class AgentChat extends EventEmitter {
   stop(): void {
     this.abort?.abort();
     this.abort = null;
+  }
+
+  /** A fresh chat starts on the configured defaults: default account, chatModel, chatWorkspace. A running conversation is left alone. */
+  useDefaults(): void {
+    if (this.busy || this.messages.length > 0) return;
+    this.profileId = "";
+    this.model = "";
+    this.workspace = this.ctx.accounts.chatDefaults().workspace;
+    this.changed();
   }
 
   configure(opts: { profileId?: string; model?: string; workspace?: Workspace }): void {
@@ -217,6 +231,8 @@ export class AgentChat extends EventEmitter {
     const cwd = secretary ? this.ctx.accounts.secretaryPath() : os.homedir();
     if (secretary && !fs.existsSync(path.join(cwd, "CLAUDE.md")))
       throw new Error(`no secretary checkout at ${cwd} (set the Secretary folder on the island's Settings tab)`);
+    // What the secretary's start.sh sets up: its platform, and its 1Password values resolved once.
+    if (secretary) Object.assign(env, { SECRETARY_PLATFORM: "linux" }, await this.secretaryVars(cwd));
 
     const content: ApiBlock[] = [...blocks, { type: "text", text }];
     async function* prompt(): AsyncGenerator<SDKUserMessage> {
@@ -239,7 +255,8 @@ export class AgentChat extends EventEmitter {
         settingSources: secretary ? ["user", "project", "local"] : [],
         // Secretary runs in auto mode: the classifier approves or denies each
         // call, and only what it can't decide comes to the approval card.
-        ...(secretary ? { permissionMode: "auto" as const } : {}),
+        // Like start.sh: Sonnet at medium effort, with the Chrome tools (claude --chrome).
+        ...(secretary ? { permissionMode: "auto" as const, effort: "medium" as const, extraArgs: { chrome: null } } : {}),
         systemPrompt: { type: "preset", preset: "claude_code", append: ISLAND_PROMPT },
         canUseTool: async (toolName, input) => {
           if (readOnly.has(toolName) || ["Read", "Glob", "Grep", "LS", "TodoWrite"].includes(toolName))
@@ -275,6 +292,35 @@ export class AgentChat extends EventEmitter {
         if (!reply.text && typeof msg.result === "string") reply.text = msg.result;
       }
     }
+  }
+
+  // ---- Secretary secrets
+
+  /** secretary.env resolved by `op run`, kept for the daemon's life: one 1Password prompt, not one per message. */
+  private secretaryCache: { vars: Record<string, string>; at: number } | null = null;
+
+  private async secretaryVars(cwd: string): Promise<Record<string, string>> {
+    const hit = this.secretaryCache;
+    // A failed or declined attempt is not retried for five minutes.
+    if (hit && (Object.keys(hit.vars).length > 0 || Date.now() - hit.at < 300_000)) return hit.vars;
+    const file = path.join(cwd, "secretary.env");
+    if (!fs.existsSync(file)) return {};
+    const names = fs.readFileSync(file, "utf8").split("\n")
+      .map((l) => /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(l)?.[1]).filter((n): n is string => !!n);
+    const vars = await new Promise<Record<string, string>>((resolve) => {
+      execFile("op", ["run", "--env-file", file, "--no-masking", "--", "env", "-0"],
+        { cwd, timeout: 180_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+          if (err) return resolve({});
+          const out: Record<string, string> = {};
+          for (const kv of String(stdout).split("\0")) {
+            const i = kv.indexOf("=");
+            if (i > 0 && names.includes(kv.slice(0, i))) out[kv.slice(0, i)] = kv.slice(i + 1);
+          }
+          resolve(out);
+        });
+    });
+    this.secretaryCache = { vars, at: Date.now() };
+    return vars;
   }
 
   // ---- Messages API (API key accounts)
@@ -324,7 +370,7 @@ export class AgentChat extends EventEmitter {
     }
   }
 
-  // ---- Ollama (local models; plain conversation)
+  // ---- Ollama (local models)
 
   private async viaOllama(profile: Profile, text: string, files: string[], reply: ChatMessage): Promise<void> {
     const base = (profile.baseUrl || "http://127.0.0.1:11434").replace(/\/+$/, "");
@@ -333,29 +379,69 @@ export class AgentChat extends EventEmitter {
     const extra = attachmentBlocks(files.filter((f) => !IMAGE_TYPES[path.extname(f).toLowerCase()])).blocks
       .map((b) => (b.type === "text" ? b.text : "")).join("\n");
     this.ollamaHistory.push({ role: "user", content: extra ? `${extra}\n\n${text}` : text, ...(images.length ? { images } : {}) });
-    const res = await fetch(base + "/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: this.model, stream: true, messages: [{ role: "system", content: ISLAND_PROMPT }, ...this.ollamaHistory] }),
-      signal: this.abort?.signal,
-    });
-    if (!res.ok || !res.body) throw new Error(`Ollama answered ${res.status}`);
-    const decoder = new TextDecoder();
-    let buf = "";
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      buf += decoder.decode(chunk, { stream: true });
-      let nl;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
-        try {
-          const o = asObject(JSON.parse(line));
-          const piece = asString(asObject(o?.message)?.content);
-          if (piece) { reply.text += piece; this.changed(); }
-          if (o?.error) throw new Error(asString(o.error));
-        } catch (e) { if (e instanceof Error && !(e instanceof SyntaxError)) throw e; }
+    let tools: unknown[] | undefined = TOOLS.map((t) => ({
+      type: "function", function: { name: t.name, description: t.description, parameters: jsonSchema(t) },
+    }));
+    for (let turn = 0; turn < 12; turn++) {
+      const res = await fetch(base + "/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: this.model, stream: true, tools, messages: [{ role: "system", content: ISLAND_PROMPT }, ...this.ollamaHistory] }),
+        signal: this.abort?.signal,
+      });
+      if (res.status === 400 && tools) {
+        // "does not support tools": talk without them rather than fail.
+        const why = await res.text();
+        if (!/tools/i.test(why)) throw new Error(`Ollama answered 400: ${why.slice(0, 200)}`);
+        tools = undefined;
+        continue;
+      }
+      if (!res.ok || !res.body) throw new Error(`Ollama answered ${res.status}`);
+      const calls: { name: string; args: unknown }[] = [];
+      let said = "";
+      const decoder = new TextDecoder();
+      let buf = "";
+      const take = (line: string) => {
+        let o: Record<string, unknown> | null;
+        try { o = asObject(JSON.parse(line)); } catch { return; }
+        if (o?.error) throw new Error(asString(o.error));
+        const m = asObject(o?.message);
+        const piece = asString(m?.content);
+        if (piece) { said += piece; reply.text += piece; this.changed(); }
+        if (Array.isArray(m?.tool_calls))
+          for (const c of m.tool_calls) {
+            const f = asObject(asObject(c)?.function);
+            if (f) calls.push({ name: asString(f.name), args: f.arguments });
+          }
+      };
+      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+        buf += decoder.decode(chunk, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) !== -1) { const line = buf.slice(0, nl); buf = buf.slice(nl + 1); take(line); }
+      }
+      if (buf.trim()) take(buf);
+      if (calls.length === 0) { this.ollamaHistory.push({ role: "assistant", content: said }); return; }
+
+      this.ollamaHistory.push({
+        role: "assistant", content: said,
+        tool_calls: calls.map((c) => ({ function: { name: c.name, arguments: c.args } })),
+      });
+      for (const [i, call] of calls.entries()) {
+        const t = toolByName(call.name);
+        const shown = this.toolStarted(reply, `ollama-${turn}-${i}`, call.name, call.args);
+        const finish = (content: string, status: ChatTool["status"]) => {
+          shown.status = status;
+          this.ollamaHistory.push({ role: "tool", tool_name: call.name, content });
+          this.changed();
+        };
+        if (!t) { finish(`unknown tool ${call.name}`, "error"); continue; }
+        const parsed = parseArgs(t, call.args);
+        if (!parsed.ok) { finish(`invalid input: ${parsed.error}`, "error"); continue; }
+        if (!t.readOnly && !(await this.approve(t.name, parsed.args))) { finish("The user declined this on the island.", "denied"); continue; }
+        try { finish(await t.run(parsed.args, this.ctx), "done"); } catch (e) { finish(String((e as Error).message ?? e), "error"); }
       }
     }
-    this.ollamaHistory.push({ role: "assistant", content: reply.text });
+    throw new Error("the model kept calling tools without answering");
   }
 }
 

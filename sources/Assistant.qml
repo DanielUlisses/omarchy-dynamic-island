@@ -35,6 +35,9 @@ Item {
   property var secretary: ({ path: "", present: false })
   property var chat: ({ busy: false, messages: [], profileId: "", model: "", workspace: "island", error: "" })
 
+  // Transcribed meetings, newest first (daemon: meetings.list).
+  property var meetings: []
+
   readonly property var approval: approvals.length > 0 ? approvals[0] : null
   readonly property bool working: chat.busy || agents.some(function(a) { return a.status === "working" })
   readonly property var workingAgent: {
@@ -163,11 +166,25 @@ Item {
   }
 
   function chatConfigure(opts) { call("chat.configure", opts) }
+  function chatDefaults() { call("chat.defaults", {}) }
   function chatStop() { call("chat.stop", {}) }
   function chatReset() { call("chat.reset", {}) }
 
   function chatSend(text, files, done) {
     call("chat.send", { text: text, files: files || [] }, function(r, err) { if (done) done(!!r, err) })
+  }
+
+  function refreshMeetings() {
+    call("meetings.list", {}, function(r) { if (r) meetings = r.meetings || [] })
+  }
+
+  function deleteMeeting(id) {
+    call("meetings.delete", { id: id }, function() { refreshMeetings() })
+  }
+
+  Connections {
+    target: assistant.island ? assistant.island.transcription : null
+    function onSaved() { assistant.refreshMeetings() }
   }
 
   function capture(done) {

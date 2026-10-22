@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import qs.Commons
 
 // Chat: talk to an agent from the island. Chips on top pick the account (any
@@ -41,6 +42,22 @@ Item {
     assistant.chatConfigure({ profileId: next.id, model: "" })
   }
 
+  function cycleWorkspace() {
+    if (!assistant.secretary.present && !secretary) return
+    assistant.chatConfigure({ workspace: secretary ? "island" : "secretary" })
+  }
+
+  // Ctrl+A agent (Island / Secretary), Ctrl+M model, Ctrl+S account, Ctrl+N new chat.
+  function chatKey(e) {
+    if (!(e.modifiers & Qt.ControlModifier) || (e.modifiers & (Qt.AltModifier | Qt.MetaModifier))) return
+    if (e.key === Qt.Key_A) cycleWorkspace()
+    else if (e.key === Qt.Key_M) cycleModel()
+    else if (e.key === Qt.Key_S) cycleAccount()
+    else if (e.key === Qt.Key_N) assistant.chatReset()
+    else return
+    e.accepted = true
+  }
+
   function cycleModel() {
     if (!account || account.models.length === 0) return
     var i = account.models.indexOf(model)
@@ -63,9 +80,14 @@ Item {
     return g[1].charAt(0).toUpperCase() + g[1].slice(1) + " " + g[2] + (g[3] && g[3].length < 3 ? "." + g[3] : "")
   }
 
+  // Typing goes straight in whenever the chat is shown: the tab opens, or the island does.
+  function focusInput() { Qt.callLater(function() { if (view.visible) input.forceActiveFocus() }) }
+
   Connections {
     target: view.island
-    function onWorkspaceTabChanged() { if (view.island.workspaceTab === "chat") input.forceActiveFocus() }
+    function onWorkspaceTabChanged() { if (view.island.workspaceTab === "chat") view.focusInput() }
+    function onWorkspaceOpenChanged() { if (view.island.workspaceOpen && view.island.workspaceTab === "chat") view.focusInput() }
+    function onViewChanged() { if (view.island.view === "workspace-expanded" && view.island.workspaceTab === "chat") view.focusInput() }
   }
 
   // ---- left: the avatar, listening or typing
@@ -128,10 +150,23 @@ Item {
       }
     }
 
+    Text {
+      anchors.horizontalCenter: parent.horizontalCenter
+      anchors.bottom: inputBar.top
+      anchors.bottomMargin: island.s(8)
+      visible: view.chat.messages.length === 0 && island.chatAttachments.length === 0
+      text: "Ctrl+A agent  ·  Ctrl+M model  ·  Ctrl+S account  ·  Ctrl+N new"
+      textFormat: Text.PlainText
+      renderType: Text.NativeRendering
+      font.family: island.textFamily
+      font.pixelSize: island.f(10)
+      color: island.fgDim
+    }
+
     PillButton {
       anchors.right: parent.right
       island: view.island
-      label: "󰐕  New"
+      label: "󰐕  New  (Ctrl+N)"
       visible: view.chat.messages.length > 0
       onClicked: view.assistant.chatReset()
     }
@@ -199,6 +234,11 @@ Item {
         readonly property bool mine: modelData.role === "user"
         width: ListView.view.width
         height: bubble.height
+        // Copy the message's text to the clipboard (the Markdown source, not the rendering).
+        property bool copied: false
+        readonly property bool copyable: !!modelData.text && !(view.chat.busy && index === view.chat.messages.length - 1)
+        HoverHandler { id: msgHover }
+        Timer { id: copiedReset; interval: 1400; onTriggered: msg.copied = false }
 
         // New messages rise in.
         opacity: 0
@@ -240,6 +280,43 @@ Item {
             font.weight: msg.mine ? Font.Medium : Font.Normal
             color: island.fg
             onLinkActivated: function(link) { island.openLink(link) }
+          }
+
+          Rectangle {
+            id: copyButton
+            visible: msg.copyable && (msgHover.hovered || msg.copied)
+            z: 2
+            anchors.right: parent.right
+            anchors.rightMargin: island.s(msg.mine ? 4 : 2)
+            anchors.top: parent.top
+            anchors.topMargin: island.s(msg.mine ? 3 : 0)
+            width: island.s(24)
+            height: width
+            radius: width / 2
+            color: Util.alpha(island.surface, 0.9)
+            border.width: 1
+            border.color: Util.alpha(island.fg, 0.12)
+
+            Text {
+              anchors.centerIn: parent
+              text: msg.copied ? "󰄬" : "󰆏"
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              font.family: island.fontFamily
+              font.pixelSize: island.f(12)
+              color: msg.copied ? island.greenColor : island.fg
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                Quickshell.execDetached(["wl-copy", "--", msg.modelData.text])
+                msg.copied = true
+                copiedReset.restart()
+              }
+            }
           }
 
           Flow {
@@ -358,6 +435,7 @@ Item {
         focus: true
         onAccepted: view.send()
         Keys.onEscapePressed: island.collapse()
+        Keys.onPressed: function(e) { view.chatKey(e) }
 
         Text {
           anchors.fill: parent

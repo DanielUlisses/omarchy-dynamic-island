@@ -17,6 +17,7 @@ Item {
     { key: "agents", glyph: "󰋜", tip: "Home" },
     { key: "chat", glyph: "󰭹", tip: "Chat" },
     { key: "plans", glyph: "󰓅", tip: "Plans" },
+    { key: "meetings", glyph: "󰍬", tip: "Meetings" },
     { key: "settings", glyph: "󰒓", tip: "Settings" }
   ]
   readonly property var activeAccount: {
@@ -145,6 +146,7 @@ Item {
         { key: "agents", component: homePage },
         { key: "chat", component: chatPage },
         { key: "plans", component: plansPage },
+        { key: "meetings", component: meetingsPage },
         { key: "settings", component: settingsPage }
       ]
       delegate: Loader {
@@ -170,5 +172,6 @@ Item {
   Component { id: homePage; AgentsDiffsView { island: view.island } }
   Component { id: chatPage; AgentChatView { island: view.island } }
   Component { id: plansPage; AccountPlansView { island: view.island } }
+  Component { id: meetingsPage; MeetingsView { island: view.island } }
   Component { id: settingsPage; AssistantSettings { island: view.island } }
 }
