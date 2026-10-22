@@ -133,6 +133,10 @@ apply as soon as you save the file.
 | `monitor` | `"primary"` | `"primary"`, `"focused"`, or a monitor name like `"eDP-1"` |
 | `layer` | `"top"` | `"overlay"` keeps it above fullscreen windows |
 | `expandOnHover` | `false` | Open on hover instead of on click |
+| `assistant` | `true` | Connect to island-agent-daemon (see [Assistant](#assistant-approvals-diffs-plans-and-chat)); `false` turns the avatar, approvals, workspace and plan pill off |
+| `planPill` | `true` | The plan gauge (5-hour usage of the default account) at the right of the resting pill |
+| `avatarTracking` | `true` | The avatar's eyes follow the pointer while it is on screen |
+| `approvalCard` | `true` | Open the island by itself when an agent asks for permission or asks a question |
 | `clockFormat` | `"h:mm AP"` | Qt date format for the expanded clock |
 | `mediaLingerSeconds` | `30` | How long a paused track stays in the island |
 | `notchWidth`, `notchHeight`, `notchRadius` | `0` | Fit a real display cutout: see below |
@@ -288,6 +292,116 @@ omarchy-shell dynamic-island openAgents      # open the list
 omarchy-shell dynamic-island demo agents     # preview: agents, agents-expanded, agent-done
 ```
 
+## Assistant: approvals, diffs, plans and chat
+
+With the island's daemon running, the island becomes a small personal
+assistant for your coding agents. An Omarchy avatar sits in the resting pill
+(drawn in your theme, tinted by the agent at work, its eyes following the
+pointer) with a plan gauge beside it. The avatar idles, spins while an agent
+works, glows orange when one needs you and dances to music. Poke it to open
+the workspace.
+
+| Piece | What it does |
+|---|---|
+| Approval card | When Claude Code asks for permission, the island opens by itself with the command or file, and **Allow**, **Always** (adds Claude's suggested rule), **Deny** and **Pane** (jump to its herdr pane). Questions (`AskUserQuestion`) show their options, one step at a time. Answering in the terminal instead works too; the card goes away |
+| Agents & Diffs | herdr's agents merged with every Claude Code session that reports through the hooks, each with its live `+N -M`, and the files it changed, one diff at a time (the last 50 per session, up to 4,000 lines each) |
+| Claude Plans | Every account's 5-hour and weekly usage, when each resets ("Resets in 1h 42m"), how many sessions use it, **Default** (new shells use it) and **herdr** (open a tab signed in to it). The pill is green below 50 %, orange to 80 % and red above |
+| Island Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island. Pick the model in the header. Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
+
+Set it up once from a checkout:
+
+```bash
+./install-hooks.sh               # add --keybinds for the keys below
+```
+
+It builds the daemon into `~/.local/share/omarchy-dynamic-island`, links
+`island-hook`, `island-agent-daemon` and `island-ctl` into `~/.local/bin`,
+starts the `omarchy-island-daemon` systemd user service, and adds the
+island's hooks to `~/.claude/settings.json`. The file is backed up first
+(`settings.json.island-backup-<time>`), your own hooks stay, and a file that
+isn't valid JSON is left alone. The status line is chained: yours keeps
+running and its output is shown as before, while the island reads the plan
+numbers Claude Code passes to it. More logins: `--config-dir ~/.claude-work`.
+Undo everything with `./install-hooks.sh --uninstall`.
+
+The hooks fail open. With the daemon down, or the island not answering,
+Claude Code carries on exactly as without them. Approvals are held on the
+`PermissionRequest` hook, so the island only asks when Claude Code itself
+would ask you; `PreToolUse` only reports what the agent is doing.
+
+### Keys
+
+`./install-hooks.sh --keybinds` (or `island-ctl keybinds --install`) adds
+these to `~/.config/hypr/bindings.lua`, skipping any key already taken.
+`island-ctl keybinds --print` shows them, including `hyprland.conf` lines.
+
+| Key | Does |
+|---|---|
+| `SUPER + ALT + A` | Open or close Island Chat |
+| `SUPER + ALT + Y` | Allow the waiting request |
+| `SUPER + ALT + N` | Deny the waiting request |
+| `SUPER + ALT + J` | Jump to the agent that needs you |
+| `SUPER + ALT + P` | Pin the workspace open |
+
+```bash
+island-ctl chat | agents | plans     # open (or close) the workspace on a tab
+island-ctl approve | always | deny   # the oldest waiting request; works with the island down
+island-ctl jump | pin | capture
+island-ctl attach ~/notes.md         # attach a file to Island Chat
+island-ctl profile work              # make an account the default
+island-ctl state                     # as JSON
+```
+
+### Accounts
+
+`~/.config/omarchy-dynamic-island/accounts.json` is created with your default
+Claude login and a local Ollama. Add others:
+
+```json
+{
+  "version": 1,
+  "active": "claude",
+  "secretaryPath": "~/secretary",
+  "profiles": [
+    { "id": "claude", "label": "Personal", "kind": "claude" },
+    { "id": "work", "label": "Work", "kind": "claude", "configDir": "~/.claude-work" },
+    { "id": "api", "label": "API", "kind": "anthropic-api",
+      "apiKeyCommand": "op read op://Private/Anthropic/credential" },
+    { "id": "codex", "label": "Codex", "kind": "codex" },
+    { "id": "ollama", "label": "Ollama", "kind": "ollama", "baseUrl": "http://127.0.0.1:11434" }
+  ]
+}
+```
+
+| Kind | Plan numbers from | Notes |
+|---|---|---|
+| `claude` | the status line of sessions using that `configDir` (Claude Code's `CLAUDE_CONFIG_DIR`), and Island Chat | Run `install-hooks.sh --config-dir DIR` for each extra login |
+| `anthropic-api` | none (it shows whether the key is there) | The key is never stored: `apiKeyEnv` names an environment variable, or `apiKeyCommand` prints it (`op read …`) |
+| `codex` | `codex app-server` (`account/rateLimits/read`) | `codexHome` for a second login |
+| `ollama` | whether the server answers, and its models | Chat only |
+
+**Default** writes `active-profile.env` (and an `active-claude` symlink) next
+to accounts.json. To have new shells use it, add this to `~/.bashrc`:
+
+```bash
+[ -f ~/.config/omarchy-dynamic-island/active-profile.env ] && . ~/.config/omarchy-dynamic-island/active-profile.env
+```
+
+### Secretary
+
+If `secretaryPath` points to a checkout of your
+[secretary](https://github.com/DanielUlisses/secretary) repo, Island Chat's
+header gets a **Secretary** switch. In that workspace the chat runs in the
+repo with its `CLAUDE.md`, rules and skills (`/refresh`, `/book-time`,
+`/mail`, `/meetings`, …) and the Claude login you picked, so "plan my day" or
+"what did I book this week" works from the island. Its tool prompts come to
+the approval card like any other agent's, and its own rules (preview every
+write and wait for an ok, secrets only as `op://` references) still apply.
+
+`~/.config/omarchy-dynamic-island/daemon.json` (optional): `herdrInterval`
+(seconds, default 4) and `reportToHerdr` (default `true`: a waiting approval
+also shows as "blocked" in herdr's sidebar).
+
 ## MacBook notch
 
 On a MacBook with a notch, keep the default `"style": "notch"` and set the island to the
@@ -360,6 +474,9 @@ Files:
 * `Island.qml`: state machine, data sources, window and IPC
 * `IslandModel.js`: pure logic (sizes, priorities, formatting, player choice)
 * `views/`: one file per island state, plus shared pieces
+* `sources/Assistant.qml`: the socket to island-agent-daemon
+* `daemon/`: island-agent-daemon and island-hook (TypeScript; `npm test` builds and runs the tests)
+* `scripts/island-ctl`, `install-hooks.sh`: keybind commands and the assistant's setup
 
 ## License
 

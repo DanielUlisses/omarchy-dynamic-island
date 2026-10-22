@@ -1,0 +1,121 @@
+#!/bin/bash
+# island-ctl: drive the island's assistant from a keybind or a terminal.
+#
+#   island-ctl chat                 open/close Island Chat
+#   island-ctl agents | plans       open/close the workspace on that tab
+#   island-ctl approve | always | deny
+#                                   answer the oldest waiting permission request
+#   island-ctl jump                 focus the herdr pane of the agent that needs you
+#   island-ctl pin                  keep the open workspace from closing
+#   island-ctl capture              grab a screen region into Island Chat
+#   island-ctl attach FILE          attach a file to Island Chat
+#   island-ctl profile ID           make an accounts.json profile the default
+#   island-ctl state                the assistant's state, as JSON
+#   island-ctl keybinds [--install | --uninstall | --print]
+#
+# Approvals still work with the island down: they go straight to the daemon.
+set -euo pipefail
+
+hook="${ISLAND_HOOK:-$HOME/.local/bin/island-hook}"
+command -v island-hook >/dev/null 2>&1 && [ ! -x "$hook" ] && hook="$(command -v island-hook)"
+
+island() { omarchy-shell dynamic-island "$@" 2>/dev/null; }
+rpc() { "$hook" --rpc "$@"; }
+
+# Defaults, SUPER + ALT + a letter. Each one is skipped if Hyprland already
+# binds that key.
+BINDS=(
+  "SUPER + ALT + A|Island Chat|chat"
+  "SUPER + ALT + Y|Allow the waiting agent request|approve"
+  "SUPER + ALT + N|Deny the waiting agent request|deny"
+  "SUPER + ALT + J|Jump to the agent that needs you|jump"
+  "SUPER + ALT + P|Pin the island workspace|pin"
+)
+BLOCK_ID="omarchy-dynamic-island-assistant"
+BINDINGS="$HOME/.config/hypr/bindings.lua"
+
+decide() {
+  local out
+  if out="$(island "$1")" && [ -n "$out" ]; then echo "$out"; return; fi
+  rpc approval.decide "{\"decision\":\"$2\"}"
+}
+
+mask_of() {
+  local mask=0 part
+  IFS='+' read -ra parts <<<"$1"
+  for part in "${parts[@]::${#parts[@]}-1}"; do
+    case "$(echo "$part" | tr -d ' ' | tr a-z A-Z)" in
+      SHIFT) mask=$((mask | 1)) ;; CTRL|CONTROL) mask=$((mask | 4)) ;;
+      ALT) mask=$((mask | 8)) ;; SUPER|WIN|LOGO) mask=$((mask | 64)) ;;
+    esac
+  done
+  echo "$mask"
+}
+
+key_of() { echo "${1##*+}" | tr -d ' '; }
+
+remove_block() {
+  [ -f "$BINDINGS" ] && [ ! -L "$BINDINGS" ] || return 0
+  grep -qxF -e "-- BEGIN $BLOCK_ID" "$BINDINGS" || return 0
+  local t; t="$(mktemp "$BINDINGS.island.XXXXXX")"
+  sed "/^-- BEGIN $BLOCK_ID\$/,/^-- END $BLOCK_ID\$/d" "$BINDINGS" >"$t"
+  chmod --reference="$BINDINGS" "$t" && mv -f "$t" "$BINDINGS"
+}
+
+keybinds() {
+  local mode="${1:---print}" self lines=() spec key desc cmd taken
+  self="$(command -v island-ctl 2>/dev/null || echo "$HOME/.local/bin/island-ctl")"
+  case "$mode" in
+    --print)
+      echo "# bindings.lua (Omarchy)"
+      for spec in "${BINDS[@]}"; do
+        IFS='|' read -r key desc cmd <<<"$spec"
+        echo "o.bind(\"$key\", \"$desc\", \"$self $cmd\")"
+      done
+      echo
+      echo "# hyprland.conf"
+      for spec in "${BINDS[@]}"; do
+        IFS='|' read -r key desc cmd <<<"$spec"
+        echo "bindd = SUPER ALT, $(key_of "$key"), $desc, exec, $self $cmd"
+      done ;;
+    --uninstall) remove_block; echo "removed" ;;
+    --install)
+      [ -f "$BINDINGS" ] && [ ! -L "$BINDINGS" ] || { echo "no regular $BINDINGS; add these by hand:" >&2; keybinds --print; return 1; }
+      remove_block
+      for spec in "${BINDS[@]}"; do
+        IFS='|' read -r key desc cmd <<<"$spec"
+        taken=false
+        if command -v hyprctl >/dev/null && hyprctl binds -j 2>/dev/null | jq -e --argjson m "$(mask_of "$key")" --arg k "$(key_of "$key")" \
+          'any(.[]; .modmask == $m and (.key | ascii_downcase) == ($k | ascii_downcase))' >/dev/null; then taken=true; fi
+        if $taken; then echo "skipped $key (already bound)"; continue; fi
+        lines+=("o.bind(\"$key\", \"$desc\", \"$self $cmd\")")
+        echo "bound $key → $cmd"
+      done
+      [ ${#lines[@]} -gt 0 ] || return 0
+      local t; t="$(mktemp "$BINDINGS.island.XXXXXX")"
+      { cat "$BINDINGS"; echo; echo "-- BEGIN $BLOCK_ID"
+        echo "-- Added by island-ctl keybinds --install; remove with --uninstall."
+        printf '%s\n' "${lines[@]}"; echo "-- END $BLOCK_ID"; } >"$t"
+      chmod --reference="$BINDINGS" "$t" && mv -f "$t" "$BINDINGS" ;;
+    *) echo "keybinds --install | --uninstall | --print" >&2; return 2 ;;
+  esac
+}
+
+case "${1:-}" in
+  chat) island toggleChat ;;
+  agents|plans) island workspace "$1" ;;
+  workspace) island workspace "${2:-}" ;;
+  approve|allow) decide approve allow ;;
+  always) decide alwaysAllow always_allow ;;
+  deny) decide deny deny ;;
+  jump) island jump ;;
+  pin) island pin ;;
+  capture) island capture ;;
+  attach) [ -n "${2:-}" ] || { echo "attach FILE" >&2; exit 2; }; island attach "$(readlink -f "$2")" ;;
+  profile) [ -n "${2:-}" ] || { echo "profile ID" >&2; exit 2; }
+    rpc accounts.setActive "$(jq -nc --arg id "$2" '{id:$id}')" ;;
+  state) island assistantState || rpc state.get ;;
+  keybinds) shift; keybinds "$@" ;;
+  ""|-h|--help|help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "unknown command: $1 (island-ctl --help)" >&2; exit 2 ;;
+esac
