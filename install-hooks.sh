@@ -5,7 +5,8 @@
 # line) to Claude Code's settings. Safe to re-run; every step is idempotent.
 #
 #   ./install-hooks.sh                       ~/.claude (or $CLAUDE_CONFIG_DIR)
-#   ./install-hooks.sh --config-dir ~/.claude-work   also another Claude login
+#   ./install-hooks.sh --config-dir ~/.claude-work   also another Claude login,
+#                                            added to accounts.json (repeatable)
 #   ./install-hooks.sh --no-statusline       leave the status line alone
 #   ./install-hooks.sh --keybinds            also bind SUPER + A, SUPER + ALT + Y/N/J/P
 #   ./install-hooks.sh --uninstall           undo all of it (keeps accounts.json)
@@ -116,7 +117,7 @@ cat <<EOF
 Done. Running Claude Code sessions pick the hooks up when they restart.
 
   Accounts:   ${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-dynamic-island/accounts.json
-  Default:    island-ctl profile <id>, or "Default" on the Claude Plans tab.
+  Default:    island-ctl profile <id>, or "Default" on the Plans tab.
               For new shells to follow it, add to ~/.bashrc:
                 [ -f ~/.config/omarchy-dynamic-island/active-profile.env ] && . ~/.config/omarchy-dynamic-island/active-profile.env
   Keybinds:   island-ctl keybinds --install   (or --print for hyprland.conf lines)

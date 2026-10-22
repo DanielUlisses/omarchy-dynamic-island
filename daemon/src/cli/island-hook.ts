@@ -216,13 +216,19 @@ async function installer(uninstall: boolean): Promise<void> {
   const extra: string[] = [];
   for (let i = 0; i < a.length; i++) if (a[i] === "--config-dir" && a[i + 1]) extra.push(a[++i]);
   const self = process.env.ISLAND_HOOK_COMMAND || path.join(os.homedir(), ".local", "bin", "island-hook");
-  for (const dir of claudeDirs(extra)) {
+  const dirs = claudeDirs(extra);
+  for (const dir of dirs) {
     try {
       console.log(uninstall ? remove(dir) : install(dir, self, !a.includes("--no-statusline")));
     } catch (e) {
       console.error(String((e as Error).message ?? e));
       process.exitCode = 1;
     }
+  }
+  // Every login the hooks go into also gets a profile in accounts.json.
+  if (!uninstall) {
+    const { registerClaudeProfiles } = await import("../accounts/accountManager.js");
+    for (const line of registerClaudeProfiles(dirs)) console.log(line);
   }
 }
 

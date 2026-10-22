@@ -137,6 +137,7 @@ apply as soon as you save the file.
 | `planPill` | `true` | The plan gauge (5-hour usage of the default account) at the right of the resting pill |
 | `avatarTracking` | `true` | The avatar's eyes follow the pointer while it is on screen |
 | `approvalCard` | `true` | Open the island by itself when an agent asks for permission or asks a question |
+| `secretaryPath` | `"~/secretary"` | Your [secretary](#secretary) checkout, for Island Chat's Secretary workspace |
 | `clockFormat` | `"h:mm AP"` | Qt date format for the expanded clock |
 | `mediaLingerSeconds` | `30` | How long a paused track stays in the island |
 | `notchWidth`, `notchHeight`, `notchRadius` | `0` | Fit a real display cutout: see below |
@@ -323,7 +324,8 @@ island's hooks to `~/.claude/settings.json`. The file is backed up first
 (`settings.json.island-backup-<time>`), your own hooks stay, and a file that
 isn't valid JSON is left alone. The status line is chained: yours keeps
 running and its output is shown as before, while the island reads the plan
-numbers Claude Code passes to it. More logins: `--config-dir ~/.claude-work`.
+numbers Claude Code passes to it. More logins: `--config-dir ~/.claude-work`
+(repeatable), which also adds each one to `accounts.json`.
 Undo everything with `./install-hooks.sh --uninstall`.
 
 The hooks fail open. With the daemon down, or the island not answering,
@@ -359,13 +361,21 @@ island-ctl state                     # as JSON
 ### Accounts
 
 `~/.config/omarchy-dynamic-island/accounts.json` is created with your default
-Claude login and a local Ollama. Add others:
+Claude login and a local Ollama. Each extra Claude login you install the hooks
+into gets its profile there too:
+
+```bash
+./install-hooks.sh --config-dir ~/.claude-pythian --config-dir ~/.claude-lanvera
+```
+
+adds `pythian` and `lanvera` (named after the folder; rename the `label` as
+you like). A login that already has a profile is left as it is. Other kinds
+you add by hand:
 
 ```json
 {
   "version": 1,
   "active": "claude",
-  "secretaryPath": "~/secretary",
   "profiles": [
     { "id": "claude", "label": "Personal", "kind": "claude" },
     { "id": "work", "label": "Work", "kind": "claude", "configDir": "~/.claude-work" },
@@ -379,7 +389,7 @@ Claude login and a local Ollama. Add others:
 
 | Kind | Plan numbers from | Notes |
 |---|---|---|
-| `claude` | the status line of sessions using that `configDir` (Claude Code's `CLAUDE_CONFIG_DIR`), and Island Chat | Run `install-hooks.sh --config-dir DIR` for each extra login |
+| `claude` | the status line of sessions using that `configDir` (Claude Code's `CLAUDE_CONFIG_DIR`), and Island Chat | `install-hooks.sh --config-dir DIR` adds the profile and the hooks |
 | `anthropic-api` | none (it shows whether the key is there) | The key is never stored: `apiKeyEnv` names an environment variable, or `apiKeyCommand` prints it (`op read …`) |
 | `codex` | `codex app-server` (`account/rateLimits/read`) | `codexHome` for a second login |
 | `ollama` | whether the server answers, and its models | Chat only |
@@ -393,7 +403,8 @@ to accounts.json. To have new shells use it, add this to `~/.bashrc`:
 
 ### Secretary
 
-If `secretaryPath` points to a checkout of your
+If the `secretaryPath` setting (in the island's entry in
+`~/.config/omarchy/shell.json`, default `~/secretary`) points to a checkout of your
 [secretary](https://github.com/DanielUlisses/secretary) repo, Island Chat's
 header gets a **Secretary** switch. In that workspace the chat runs in the
 repo with its `CLAUDE.md`, rules and skills (`/refresh`, `/book-time`,

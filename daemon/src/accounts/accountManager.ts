@@ -15,6 +15,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { islandSettings } from "../shellSettings.js";
 import { asObject, asString, configDir, isNum, stateDir } from "../protocol.js";
 import { mergeSdkRateLimit, parseClaudeRateLimits, parseCodexRateLimits, type PlanUsage } from "./planMath.js";
 
@@ -42,8 +43,6 @@ export interface AccountsFile {
   version: 1;
   active: string;
   profiles: Profile[];
-  /** Where the secretary repo is checked out, for Island Chat's Secretary workspace. */
-  secretaryPath?: string;
   /** Directory new herdr tabs open in (default ~). */
   spawnCwd?: string;
 }
@@ -76,6 +75,49 @@ export function canonicalConfigDir(dir: string | undefined): string {
   return abs === path.join(os.homedir(), ".claude") ? "" : abs;
 }
 
+/** "~/.claude-pythian" → "pythian", "~/.claude" → "claude". */
+function profileIdFor(dir: string): string {
+  const canon = canonicalConfigDir(dir);
+  if (!canon) return "claude";
+  const base = path.basename(canon).replace(/^\.+/, "").replace(/^claude[-_.]?/, "") || "claude";
+  return base.replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 40) || "claude";
+}
+
+/**
+ * Adds a Claude profile to accounts.json for each config dir that has none
+ * (install-hooks.sh --config-dir). Existing profiles are never changed, and an
+ * accounts.json that does not parse is left alone. Returns what it did.
+ */
+export function registerClaudeProfiles(dirs: string[]): string[] {
+  const file = accountsPath();
+  let accounts: AccountsFile;
+  try {
+    accounts = parseAccounts(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") return [`${file} is not valid JSON; no profiles added`];
+    accounts = defaultAccounts();
+  }
+  const out: string[] = [];
+  for (const dir of dirs) {
+    const canon = canonicalConfigDir(dir);
+    if (accounts.profiles.some((p) => p.kind === "claude" && canonicalConfigDir(p.configDir) === canon)) continue;
+    let id = profileIdFor(dir);
+    for (let n = 2; accounts.profiles.some((p) => p.id === id); n++) id = `${profileIdFor(dir)}-${n}`;
+    const label = id.charAt(0).toUpperCase() + id.slice(1);
+    const home = os.homedir();
+    const shown = canon.startsWith(home + "/") ? "~" + canon.slice(home.length) : canon;
+    accounts.profiles.push({ id, label, kind: "claude", configDir: shown, models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5" });
+    out.push(`added profile "${id}" (${shown || "~/.claude"}) to ${file}`);
+  }
+  if (out.length > 0) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(accounts, null, 2) + "\n");
+    fs.renameSync(tmp, file);
+  }
+  return out;
+}
+
 export function defaultAccounts(): AccountsFile {
   return {
     version: 1,
@@ -84,7 +126,6 @@ export function defaultAccounts(): AccountsFile {
       { id: "claude", label: "Claude", kind: "claude", configDir: "", models: CLAUDE_MODELS, defaultModel: "claude-opus-5-5" },
       { id: "ollama", label: "Ollama", kind: "ollama", baseUrl: "http://127.0.0.1:11434" },
     ],
-    secretaryPath: "~/secretary",
   };
 }
 
@@ -115,7 +156,6 @@ export function parseAccounts(text: string): AccountsFile {
     version: 1,
     active: profiles.some((p) => p.id === active) ? active : (profiles[0]?.id ?? ""),
     profiles,
-    secretaryPath: asString(raw.secretaryPath) || undefined,
     spawnCwd: asString(raw.spawnCwd) || undefined,
   };
 }
@@ -352,8 +392,10 @@ export class AccountManager extends EventEmitter {
     throw new Error("API key profiles are used from Island Chat, not in a terminal");
   }
 
+  /** The "secretaryPath" setting in the island's shell.json entry. */
   secretaryPath(): string {
-    return expandHome(this.file.secretaryPath || "~/secretary");
+    const v = islandSettings().secretaryPath;
+    return expandHome(typeof v === "string" && v.trim() ? v.trim() : "~/secretary");
   }
 
   /** What the island shows: every profile with its numbers and how many sessions run on it. */

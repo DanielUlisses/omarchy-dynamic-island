@@ -1175,7 +1175,8 @@ var defaultSettings = {
   assistant: true,
   planPill: true,
   avatarTracking: true,
-  approvalCard: true
+  approvalCard: true,
+  secretaryPath: "~/secretary"
 }
 
 function missingSettings(settings) {

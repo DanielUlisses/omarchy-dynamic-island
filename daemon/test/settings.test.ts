@@ -43,3 +43,30 @@ test("a settings file that is not JSON is never overwritten", () => {
   assert.throws(() => install(dir, CMD, true));
   assert.equal(fs.readFileSync(path.join(dir, "settings.json"), "utf8"), "{ nope");
 });
+
+test("install registers a profile per Claude login, once, and secretaryPath comes from shell.json", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "island-acc-"));
+  const prev = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
+  process.env.HOME = home;
+  process.env.XDG_CONFIG_HOME = path.join(home, ".config");
+  try {
+    const { registerClaudeProfiles, AccountManager, accountsPath } = await import("../src/accounts/accountManager.js");
+    const out = registerClaudeProfiles([path.join(home, ".claude"), path.join(home, ".claude-pythian")]);
+    assert.equal(out.length, 1);
+    assert.match(out[0], /"pythian"/);
+    assert.deepEqual(registerClaudeProfiles([path.join(home, ".claude-pythian")]), []);
+    const saved = JSON.parse(fs.readFileSync(accountsPath(), "utf8"));
+    assert.deepEqual(saved.profiles.map((p: { id: string }) => p.id), ["claude", "ollama", "pythian"]);
+    assert.equal(saved.profiles[2].configDir, "~/.claude-pythian");
+
+    const am = new AccountManager();
+    assert.equal(am.secretaryPath(), path.join(home, "secretary"));
+    fs.mkdirSync(path.join(home, ".config", "omarchy"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".config", "omarchy", "shell.json"),
+      JSON.stringify({ plugins: [{ id: "omarchy-dynamic-island", secretaryPath: "~/work/secretary" }] }));
+    assert.equal(am.secretaryPath(), path.join(home, "work", "secretary"));
+  } finally {
+    process.env.HOME = prev.HOME;
+    if (prev.XDG_CONFIG_HOME === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = prev.XDG_CONFIG_HOME;
+  }
+});
