@@ -60,7 +60,7 @@ export interface ProfileStatus {
   checkedAt: number;
 }
 
-export const CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"];
+export const CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 
 const ID_RE = /^[A-Za-z0-9_.-]{1,48}$/;
 
