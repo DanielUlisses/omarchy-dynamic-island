@@ -31,7 +31,9 @@ var sizes = {
   "clock-expanded": { w: 380, h: 132, r: 40 },
   "activity-expanded": { w: 392, h: 104, r: 38 },
   "calendar-expanded": { w: 500, h: 262, r: 40 },
-  "notification-actions": { w: 404, h: 118, r: 38 }
+  "notification-actions": { w: 404, h: 118, r: 38 },
+  "approval":      { w: 460, h: 156, r: 38 },
+  "workspace-expanded": { w: 640, h: 344, r: 40 }
 }
 
 // Compact activities in priority order. The first one present owns the pill;
@@ -60,6 +62,10 @@ function slots(list) {
 // island the user deliberately opened, since a volume tick while reading the
 // expanded player should not throw the player away.
 function viewFor(state) {
+  // A coding agent waiting on a yes/no (or a question) opens the island by
+  // itself, over anything but the workspace, which shows it in its own tab.
+  if (state.approval && !(state.userExpanded && state.workspaceOpen)) return "approval"
+  if (state.userExpanded && state.workspaceOpen) return "workspace-expanded"
   if (state.userExpanded && state.inboxOpen) return "inbox-expanded"
   if (state.userExpanded && state.outputsOpen) return "outputs-expanded"
   if (state.userExpanded && state.calendarOpen) return "calendar-expanded"
@@ -124,9 +130,20 @@ function calendarSettingsSize(feeds) {
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",
                     "stopwatch", "activity", "calendar", "agents"]
 
+// The approval card: a header, what the tool wants to do, and the buttons; a
+// question instead lists its options (four, then it scrolls).
+function approvalSize(approval) {
+  if (!approval) return sizes["approval"]
+  var q = approval.questions && approval.questions.length > 0 ? approval.questions[0] : null
+  if (!q) return sizes["approval"]
+  var rows = Math.max(1, Math.min(4, q.options.length))
+  return { w: 460, h: 16 + 22 + 8 + 36 + rows * 34 + (rows - 1) * 4 + (q.multiSelect ? 38 : 0) + 18, r: 38 }
+}
+
 function sizeFor(view, counts, notch) {
   var base
-  if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
+  if (view === "approval") base = approvalSize(counts && counts.approval)
+  else if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
   else if (view === "outputs-expanded") base = outputsSize(counts && counts.outputs || 0)
   else if (view === "agents-expanded") base = agentsSize(counts && counts.agents || 0)
   else if (view === "calendar-expanded" && counts && counts.calendarSettings) base = calendarSettingsSize(counts.calendarSettings - 1)
@@ -1154,7 +1171,11 @@ var defaultSettings = {
   charging: true,
   trackChange: true,
   recording: true,
-  mic: true
+  mic: true,
+  assistant: true,
+  planPill: true,
+  avatarTracking: true,
+  approvalCard: true
 }
 
 function missingSettings(settings) {
@@ -1175,4 +1196,95 @@ function parseKeybind(text) {
     mask |= bit
   }
   return { mask: mask, key: parts[parts.length - 1] }
+}
+
+// ------------------------------------------------------------------
+// Assistant: plan gauges, diff counts, the Omarchy avatar's mood, and a
+// little syntax colour for the diff viewer.
+// ------------------------------------------------------------------
+
+// What a plan window counts as now: 0 once its reset time has passed.
+function windowPct(w, now) {
+  if (!w || !(w.resetsAt > 0)) return -1
+  return w.resetsAt <= now ? 0 : Math.max(0, Math.min(100, Number(w.usedPct) || 0))
+}
+
+// "green" below 50 %, "orange" to 80 %, "red" above, "none" without numbers.
+function planTier(pct) {
+  if (!(pct >= 0)) return "none"
+  return pct < 50 ? "green" : (pct <= 80 ? "orange" : "red")
+}
+
+// The pill's number: the active account's 5-hour share, or the highest
+// burn among all accounts when the active one has none.
+// -> { pct, account } or null
+function planHeadline(accounts, now) {
+  var list = accounts || []
+  var best = null
+  for (var i = 0; i < list.length; i++) {
+    var a = list[i]
+    var pct = windowPct(a.fiveHour, now)
+    if (pct < 0) pct = windowPct(a.sevenDay, now)
+    if (pct < 0) continue
+    if (a.active) return { pct: pct, account: a }
+    if (!best || pct > best.pct) best = { pct: pct, account: a }
+  }
+  return best
+}
+
+// "Resets in 1h 42m"
+function resetText(resetsAt, now) {
+  var s = Math.max(0, Math.round((resetsAt - now) / 1000))
+  if (s <= 0) return "Resetting…"
+  var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
+  if (d > 0) return "Resets in " + d + "d " + h + "h"
+  if (h > 0) return "Resets in " + h + "h " + m + "m"
+  return "Resets in " + Math.max(1, m) + "m"
+}
+
+// "+12 -3", or "" for no changes.
+function diffText(added, removed) {
+  if (!(added > 0) && !(removed > 0)) return ""
+  return "+" + (added || 0) + " -" + (removed || 0)
+}
+
+// The avatar's state, most pressing first.
+function avatarMood(s) {
+  if (s.approval) return "approval"
+  if (s.poked) return "poked"
+  if (s.working) return "working"
+  if (s.music) return "music"
+  return "idle"
+}
+
+var codeKeywords = /\b(import|export|from|const|let|var|function|return|if|else|for|while|class|new|async|await|def|fn|pub|use|struct|impl|match|type|interface|property|readonly|true|false|null|undefined|None|self|this)\b/g
+
+function escapeHtml(t) {
+  return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/ /g, "&nbsp;")
+}
+
+// One line of code as StyledText: strings, comments, numbers and keywords
+// tinted. Deliberately small: it only has to read well at a glance.
+function highlightLine(text, c) {
+  var line = String(text || "")
+  if (line.length > 400) line = line.substring(0, 400) + "…"
+  var comment = line.search(/(\/\/|#(?!include)|--\s)/)
+  var code = comment >= 0 ? line.substring(0, comment) : line
+  var rest = comment >= 0 ? line.substring(comment) : ""
+  var out = ""
+  var re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)/g
+  var last = 0, m
+  function plain(t) {
+    return escapeHtml(t)
+      .replace(codeKeywords, "<span style=\"color:" + c.keyword + "\">$1</span>")
+      .replace(/\b(\d+(?:\.\d+)?)\b/g, "<span style=\"color:" + c.number + "\">$1</span>")
+  }
+  while ((m = re.exec(code)) !== null) {
+    out += plain(code.substring(last, m.index))
+    out += "<span style=\"color:" + c.string + "\">" + escapeHtml(m[0]) + "</span>"
+    last = m.index + m[0].length
+  }
+  out += plain(code.substring(last))
+  if (rest) out += "<span style=\"color:" + c.comment + "\">" + escapeHtml(rest) + "</span>"
+  return out
 }
