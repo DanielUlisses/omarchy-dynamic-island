@@ -2,24 +2,28 @@ import QtQuick
 import qs.Commons
 import "../IslandModel.js" as Model
 
-// Home: one agent at a time (‹ › to page through them, most urgent first).
-// On the left its avatar, name and what it did this turn, step by step; on
-// the right the file it is changing, like an editor tab, and the tail of the
-// last command it ran. A waiting approval sits on top.
+// Home: one agent at a time (‹ › or a click on the avatar pages through the
+// list shown, most urgent first). Two lists: "local" (sessions reporting
+// through island-hook on this machine) and "herdr" (everything herdr
+// publishes, on every machine). For a local one, on the left its avatar, name
+// and what it did this turn, step by step; on the right the file it is
+// changing, like an editor tab, and the tail of the last command it ran. For
+// herdr the right side is herdr's own status of each agent, blocked first,
+// then done, working and idle, each with a button that takes you there.
+// A waiting approval sits on top.
 Item {
   id: view
 
   property var island: null
   readonly property var assistant: island.assistant
   readonly property var rows: assistant.agents
-  // Agents on this machine and the ones on herdr's SSH machines page in
-  // separate loops: hooks only reach the island from this machine, so the
-  // remote ones have status but no steps or diffs.
-  readonly property var localRows: rows.filter(function(r) { return !r.machine })
-  readonly property var remoteRows: rows.filter(function(r) { return !!r.machine })
-  property bool showRemote: false
-  readonly property bool remoteGroup: remoteRows.length > 0 && (showRemote || localRows.length === 0)
-  readonly property var group: remoteGroup ? remoteRows : localRows
+  // Hooks only reach the island from this machine, so only local sessions have
+  // steps and diffs; herdr publishes a status for every agent it runs, on any machine.
+  readonly property var localRows: rows.filter(function(r) { return !!r.hookSession })
+  readonly property var herdrRows: rows.filter(function(r) { return !!r.pane })
+  property bool showHerdr: false
+  readonly property bool herdrGroup: herdrRows.length > 0 && (showHerdr || localRows.length === 0)
+  readonly property var group: herdrGroup ? herdrRows : localRows
   property string selectedKey: ""
   readonly property int selectedIndex: {
     for (var i = 0; i < group.length; i++) if (group[i].key === selectedKey) return i
@@ -40,20 +44,61 @@ Item {
     assistant.markSeen(group[i].hookSession)
   }
 
-  // The avatar only cycles this machine's agents; from the remote loop it
-  // comes back to the first local one.
-  function poke() {
-    if (remoteGroup && localRows.length > 0) {
-      showRemote = false
-      selectedKey = localRows[0].key
-      assistant.markSeen(localRows[0].hookSession)
-    } else if (!remoteGroup) page(1)
+  // The avatar cycles the list that is shown, local or herdr.
+  function poke() { page(1) }
+
+  function toggleHerdr() {
+    showHerdr = !herdrGroup
+    var list = showHerdr ? herdrRows : localRows
+    if (list.length > 0) selectedKey = list[0].key
   }
 
-  function toggleRemote() {
-    showRemote = !remoteGroup
-    var list = showRemote ? remoteRows : localRows
-    if (list.length > 0) selectedKey = list[0].key
+  // Typing goes straight in whenever Home is shown (see Island.chatTyping).
+  function focusPage() { Qt.callLater(function() { if (view.visible) view.forceActiveFocus() }) }
+  // The page is hidden until the workspace has animated in: focus it when it shows.
+  onVisibleChanged: if (visible && island.workspaceTab === "agents") focusPage()
+  focus: true
+  Component.onCompleted: focusPage()
+  Connections {
+    target: view.island
+    function onWorkspaceTabChanged() { if (view.island.workspaceTab === "agents") view.focusPage() }
+    function onWorkspaceOpenChanged() { if (view.island.workspaceOpen && view.island.workspaceTab === "agents") view.focusPage() }
+    function onViewChanged() { if (view.island.view === "workspace-expanded" && view.island.workspaceTab === "agents") view.focusPage() }
+  }
+
+  // Ctrl+H local / herdr, Ctrl+A next agent (same as clicking the avatar), Ctrl+Shift+A the previous one, Ctrl+O open it in herdr; ← → page.
+  function openSelected() { if (selected && selected.pane) island.openAgentByKey(selected.key) }
+  Keys.onPressed: function(e) {
+    var ctrl = (e.modifiers & Qt.ControlModifier) && !(e.modifiers & (Qt.AltModifier | Qt.MetaModifier))
+    if (ctrl && e.key === Qt.Key_H) { if (localRows.length > 0 && herdrRows.length > 0) toggleHerdr() }
+    else if (ctrl && e.key === Qt.Key_A) { if (e.modifiers & Qt.ShiftModifier) page(-1); else poke() }
+    else if (ctrl && e.key === Qt.Key_O) openSelected()
+    else if (e.key === Qt.Key_Left) page(-1)
+    else if (e.key === Qt.Key_Right) page(1)
+    else return
+    e.accepted = true
+  }
+
+  function select(r) {
+    selectedKey = r.key
+    assistant.markSeen(r.hookSession)
+  }
+
+  readonly property var statusOrder: ["blocked", "done", "working", "idle"]
+  function statusLabel(st) { return st === "blocked" ? "Blocked" : (st === "done" ? "Done" : (st === "working" ? "Working" : "Idle")) }
+  function statusColor(st) {
+    return st === "blocked" ? island.orangeColor : (st === "done" ? island.greenColor : (st === "working" ? island.accentColor : island.fgDim))
+  }
+  // herdr's agents under a heading per status, in the order above.
+  readonly property var herdrItems: {
+    var out = []
+    for (var o = 0; o < statusOrder.length; o++) {
+      var st = statusOrder[o], mine = herdrRows.filter(function(r) { return (statusOrder.indexOf(r.status) === -1 ? "idle" : r.status) === st })
+      if (mine.length === 0) continue
+      out.push({ heading: true, status: st, count: mine.length })
+      for (var j = 0; j < mine.length; j++) out.push({ heading: false, r: mine[j] })
+    }
+    return out
   }
 
   function load() {
@@ -172,16 +217,29 @@ Item {
         IconButton { glyph: "󰅂"; glyphSize: island.f(12); color: island.fgDim; fontFamily: island.fontFamily; onClicked: view.page(1) }
       }
 
-      // Switch the pager between this machine's loop and the remote one.
+      // Switch between the local list and herdr's.
       PillButton {
-        visible: view.localRows.length > 0 && view.remoteRows.length > 0
+        visible: view.localRows.length > 0 && view.herdrRows.length > 0
         anchors.right: parent.right
         anchors.rightMargin: island.s(2)
         y: pager.visible ? pager.y + pager.height + island.s(4) : face.y
         island: view.island
-        label: view.remoteGroup ? "󰋜 " + view.localRows.length : "󰒍 " + view.remoteRows.length
-        selected: view.remoteGroup
-        onClicked: view.toggleRemote()
+        label: view.herdrGroup ? "󰋜 " + view.localRows.length : "󰒍 " + view.herdrRows.length
+        selected: view.herdrGroup
+        onClicked: view.toggleHerdr()
+      }
+
+      Text {
+        anchors.right: parent.right
+        anchors.rightMargin: island.s(2)
+        y: face.y + face.height - implicitHeight
+        text: "^H list · ^A/^⇧A page · ^O open"
+        visible: view.rows.length > 0 && main.height > island.s(220)
+        textFormat: Text.PlainText
+        renderType: Text.NativeRendering
+        font.family: island.textFamily
+        font.pixelSize: island.f(9)
+        color: Util.alpha(island.fg, 0.4)
       }
 
       Column {
@@ -347,9 +405,162 @@ Item {
       }
     }
 
+    // ---- right, for the herdr list: what herdr says about each agent
+    Rectangle {
+      id: herdrPanel
+      visible: view.herdrGroup
+      x: side.width + island.s(10)
+      width: parent.width - x
+      height: parent.height
+      radius: island.s(16)
+      color: Qt.darker(island.surface, 1.25)
+      border.width: 1
+      border.color: Util.alpha(island.fg, 0.06)
+      clip: true
+
+      ListView {
+        id: herdrList
+        anchors.fill: parent
+        anchors.margins: island.s(8)
+        clip: true
+        spacing: island.s(4)
+        boundsBehavior: Flickable.StopAtBounds
+        model: view.herdrItems
+
+        // Cycling with the avatar keeps the selected agent in sight.
+        function reveal() {
+          for (var i = 0; i < view.herdrItems.length; i++) {
+            var it = view.herdrItems[i]
+            if (!it.heading && view.selected && it.r.key === view.selected.key) { positionViewAtIndex(i, ListView.Contain); return }
+          }
+        }
+        Connections {
+          target: view
+          function onSelectedKeyChanged() { herdrList.reveal() }
+        }
+
+        delegate: Item {
+          id: hrow
+          required property var modelData
+          readonly property bool heading: modelData.heading
+          readonly property var r: modelData.r
+          readonly property bool current: !heading && !!r && !!view.selected && r.key === view.selected.key
+          width: ListView.view.width
+          height: heading ? island.s(24) : island.s(40)
+
+          Row {
+            visible: hrow.heading
+            anchors.left: parent.left
+            anchors.leftMargin: island.s(6)
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: island.s(2)
+            spacing: island.s(6)
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: island.s(8); height: width; radius: width / 2
+              color: hrow.heading ? view.statusColor(hrow.modelData.status) : "transparent"
+            }
+            Text {
+              text: hrow.heading ? view.statusLabel(hrow.modelData.status) + "  ·  " + hrow.modelData.count : ""
+              textFormat: Text.PlainText
+              renderType: Text.NativeRendering
+              font.family: island.textFamily
+              font.pixelSize: island.f(11)
+              font.weight: Font.DemiBold
+              color: hrow.heading ? view.statusColor(hrow.modelData.status) : island.fg
+            }
+          }
+
+          Rectangle {
+            visible: !hrow.heading
+            anchors.fill: parent
+            radius: island.s(12)
+            color: Util.alpha(island.fg, hrow.current ? 0.12 : (rowMouse.containsMouse ? 0.08 : 0.04))
+            border.width: hrow.current ? 1 : 0
+            border.color: Util.alpha(island.accentColor, 0.5)
+
+            MouseArea {
+              id: rowMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: if (hrow.r) view.select(hrow.r)
+            }
+
+            Rectangle {
+              x: island.s(9)
+              anchors.verticalCenter: parent.verticalCenter
+              width: island.s(3); height: parent.height - island.s(16); radius: width / 2
+              color: hrow.r ? view.statusColor(hrow.r.status) : "transparent"
+            }
+
+            Column {
+              x: island.s(20)
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - x - goButton.width - island.s(14)
+              spacing: island.s(1)
+              Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: hrow.r ? (hrow.r.project || hrow.r.title || hrow.r.place || "agent") : ""
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                font.family: island.textFamily
+                font.pixelSize: island.f(12)
+                font.weight: Font.DemiBold
+                color: island.fg
+              }
+              Text {
+                width: parent.width
+                elide: Text.ElideRight
+                text: hrow.r ? view.agentName(hrow.r.agent) + "  ·  " + Model.agentStateText(hrow.r.status)
+                  + (hrow.r.machine ? "  ·  " + (hrow.r.label || hrow.r.target || "remote") : "")
+                  + (hrow.r.title && hrow.r.project ? "  ·  " + hrow.r.title : "") : ""
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                font.family: island.textFamily
+                font.pixelSize: island.f(10)
+                color: island.fgDim
+              }
+            }
+
+            // Takes you to the agent in herdr, like the herdr bar widget does.
+            Rectangle {
+              id: goButton
+              anchors.right: parent.right
+              anchors.rightMargin: island.s(8)
+              anchors.verticalCenter: parent.verticalCenter
+              width: goText.implicitWidth + island.s(20)
+              height: island.s(26)
+              radius: height / 2
+              color: Util.alpha(hrow.r ? view.statusColor(hrow.r.status) : island.accentColor, goMouse.containsMouse ? 0.3 : 0.18)
+              Text {
+                id: goText
+                anchors.centerIn: parent
+                text: "󰁔  Go"
+                textFormat: Text.PlainText
+                renderType: Text.NativeRendering
+                font.family: island.fontFamily
+                font.pixelSize: island.f(11)
+                color: island.fg
+              }
+              MouseArea {
+                id: goMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (hrow.r) island.openAgentByKey(hrow.r.key)
+              }
+            }
+          }
+        }
+      }
+    }
+
     // ---- right: the file being changed, like an editor tab
     Rectangle {
       id: editor
+      visible: !view.herdrGroup
       x: side.width + island.s(10)
       width: parent.width - x
       height: parent.height
@@ -464,9 +675,7 @@ Item {
         width: parent.width - island.s(40)
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
-        text: !view.selected ? "" : (view.session ? "No file changes yet. They show up here as the agent edits."
-          : view.selected.machine ? "Remote herdr agent on " + (view.selected.label || view.selected.target || "an SSH machine") + ". Hooks only reach the island from this machine, so only its status is shown."
-          : "herdr sees this agent, but it isn't reporting through island-hook, so its edits aren't tracked.")
+        text: !view.selected ? "" : "No file changes yet. They show up here as the agent edits."
         textFormat: Text.PlainText
         font.family: island.textFamily
         font.pixelSize: island.f(11)

@@ -27,7 +27,6 @@ var sizes = {
   "stopwatch":     { w: 236, h: 32, r: 16 },
   "activity":      { w: 256, h: 32, r: 16 },
   "calendar":      { w: 300, h: 32, r: 16 },
-  "agents":        { w: 320, h: 32, r: 16 },
   "clock-expanded": { w: 380, h: 132, r: 40 },
   "activity-expanded": { w: 392, h: 104, r: 38 },
   "calendar-expanded": { w: 500, h: 262, r: 40 },
@@ -88,7 +87,6 @@ function viewFor(state) {
     if (focus === "timer" || focus === "stopwatch") return "clock-expanded"
     if (focus === "activity") return "activity-expanded"
     if (focus === "calendar") return "calendar-expanded"
-    if (focus === "agents") return "agents-expanded"
     if (focus === "media" && state.hasMedia) return "media-expanded"
     return state.hasMedia && focus !== "calendar" ? "media-expanded" : "idle-expanded"
   }
@@ -118,15 +116,6 @@ function outputsSize(count) {
   return { w: 392, h: 16 + 22 + 8 + rows * 40 + (rows - 1) * 4 + 16, r: 36 }
 }
 
-// Herdr agents: a header plus one row per live agent (five, then it scrolls).
-var agentRowHeight = 46
-var agentRowGap = 4
-
-function agentsSize(count) {
-  var rows = Math.max(1, Math.min(5, count))
-  return { w: 440, h: 16 + 22 + 8 + rows * agentRowHeight + (rows - 1) * agentRowGap + 16, r: 36 }
-}
-
 // Calendar settings: header, link field, one row per calendar (up to five,
 // then it scrolls), the exclude field and the holidays row.
 function calendarSettingsSize(feeds) {
@@ -137,7 +126,7 @@ function calendarSettingsSize(feeds) {
 // The tallest any view gets (lists at their longest), so the window that
 // holds the island never crops one.
 function tallestView() {
-  var h = Math.max(inboxSize(4).h, outputsSize(6).h, agentsSize(5).h, calendarSettingsSize(5).h)
+  var h = Math.max(inboxSize(4).h, outputsSize(6).h, calendarSettingsSize(5).h)
   for (var k in sizes) h = Math.max(h, sizes[k].h)
   return h
 }
@@ -145,7 +134,7 @@ function tallestView() {
 // Views that sit on the notch itself; with a measured notch they grow to
 // clear the camera cutout with room for content on both sides.
 var compactViews = ["idle", "idle-hover", "media", "recording", "mic", "inbox", "timer",
-                    "stopwatch", "activity", "calendar", "agents"]
+                    "stopwatch", "activity", "calendar"]
 
 // The approval card: a header, what the tool wants to do, and the buttons; a
 // question instead lists its options (four, then it scrolls).
@@ -162,7 +151,6 @@ function sizeFor(view, counts, notch) {
   if (view === "approval") base = approvalSize(counts && counts.approval)
   else if (view === "inbox-expanded") base = inboxSize(counts && counts.inbox || 0)
   else if (view === "outputs-expanded") base = outputsSize(counts && counts.outputs || 0)
-  else if (view === "agents-expanded") base = agentsSize(counts && counts.agents || 0)
   else if (view === "calendar-expanded" && counts && counts.calendarSettings) base = calendarSettingsSize(counts.calendarSettings - 1)
   else base = sizes[view] || sizes["idle"]
   if (!notch || !(notch.w > 0) || compactViews.indexOf(view) === -1) return base

@@ -281,8 +281,7 @@ Idle agents ("ready") are not shown, so with nothing going on the island
 stays quiet. When an agent starts waiting on you or finishes, a toast says
 which one and where (machine · repo). Agents never take the pill: they
 ride in the bubble beside whatever it shows (the resting ticker with your next
-meeting, the calendar, a timer), and only when nothing else wants the bubble. Click the toast, or a row in the opened
-list, to land on that agent, the way the herdr bar widget does: its pane is
+meeting, the calendar, a timer), and only when nothing else wants the bubble. Click the bubble to open Home. Click the toast, or press Go on a herdr row in Home, to land on that agent, the way the herdr bar widget does: its pane is
 focused on the machine running it (which also clears its "done"), then the
 window attached to that machine comes up (`herdr --remote <ssh target>`, or
 plain `herdr` for this machine). With no such window, one is opened in foot
@@ -296,7 +295,7 @@ island never starts one.
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON
 omarchy-shell dynamic-island openAgents      # open the list
-omarchy-shell dynamic-island demo agents     # preview: agents, agents-expanded, agent-done
+omarchy-shell dynamic-island demo agents     # preview: agents, agent-done
 ```
 
 ## Assistant: approvals, diffs, plans and chat
@@ -313,7 +312,7 @@ herdr.
 | Piece | What it does |
 |---|---|
 | Approval card | When Claude Code asks for permission, the island opens by itself with the command or file, and **Allow**, **Always** (adds Claude's suggested rule), **Deny** and **Pane** (jump to its herdr pane). Questions (`AskUserQuestion`) show their options, one step at a time. Answering in the terminal instead works too; the card goes away |
-| Home | One agent at a time (‹ › pages through them, the one that needs you first): its avatar, what it did this turn step by step (Read ✓, Edit ✓, Bash …, Done), the file it is changing shown like an editor tab, and the last command with the tail of its output (PASS/FAIL). Every session's diffs are kept (the last 50 per session, up to 4,000 lines each) |
+| Home | One agent at a time (‹ › pages through them, the one that needs you first): its avatar, what it did this turn step by step (Read ✓, Edit ✓, Bash …, Done), the file it is changing shown like an editor tab, and the last command with the tail of its output (PASS/FAIL). Every session's diffs are kept (the last 50 per session, up to 4,000 lines each) |. Two lists: **local** (sessions reporting through the hooks) and **herdr** (everything herdr publishes, on every machine, under Blocked, Done, Working and Idle, each with a **Go** button). Home takes the keyboard when it opens: **Ctrl+H** switches the list, **Ctrl+A** (or a click on the avatar) the next agent, **Ctrl+Shift+A** the previous one, **Ctrl+O** opens the selected one in herdr, ← → page
 | Plans | Every account's 5-hour and weekly usage, when each resets ("Resets in 1h 42m"), how many sessions use it, **Default** (new shells use it) and **herdr** (open a tab signed in to it). The pill is green below 50 %, orange to 80 % and red above |
 | Meetings | Everything you transcribed, grouped by meeting title, newest first. Per meeting: open the summary or transcript, **Ask** (attaches the transcript to Chat), **To-dos** (asks the agent for decisions, action items and open questions) and delete (press twice). Opens with `SUPER + ALT + M` (`island-ctl meetings`) |
 | Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island (tool-capable models such as Qwen3 get the same tools as Claude). Pick the model in the header. Hover a message and press 󰆏 to copy its text. `SUPER + A` opens a fresh chat on the defaults (Secretary, `chatModel`, the default account) with the cursor in the box; **Ctrl+A** switches Island/Secretary, **Ctrl+M** the model, **Ctrl+S** the account and **Ctrl+N** starts a new chat. Secretary runs like its `start.sh`: its `secretary.env` 1Password references are resolved once (one prompt, kept until the daemon restarts) and it has the Chrome tools Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, read your transcribed meetings, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
@@ -460,7 +459,7 @@ omarchy-shell dynamic-island demo media    # preview: media paused split recordi
                                            # notification-actions inbox
                                            # track toast expanded idle-expanded timer stopwatch
                                            # activity calendar camera device outputs
-                                           # agents agents-expanded agent-done off
+                                           # agents agent-done off
 ```
 
 Timers, the stopwatch, and live activities for your own scripts:

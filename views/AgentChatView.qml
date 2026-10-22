@@ -83,6 +83,8 @@ Item {
   // Typing goes straight in whenever the chat is shown: the tab opens, or the island does.
   function focusInput() { Qt.callLater(function() { if (view.visible) input.forceActiveFocus() }) }
 
+  onVisibleChanged: if (visible && island.workspaceTab === "chat") focusInput()
+
   Connections {
     target: view.island
     function onWorkspaceTabChanged() { if (view.island.workspaceTab === "chat") view.focusInput() }

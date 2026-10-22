@@ -735,7 +735,6 @@ Item {
 
   // The list closes by itself once nothing in it is live any more.
   readonly property int liveAgents: herdrSource.live.length
-  onLiveAgentsChanged: if (liveAgents === 0 && view === "agents-expanded") collapse()
 
   function endActivity(id) { activitySource.end(id, "") }
 
@@ -779,7 +778,7 @@ Item {
     else if (grabHovered) { grabHovered = false; chatGrab = false }
   }
   onChatTypingChanged: if (!chatTyping) { chatGrab = false; grabHovered = false }
-  readonly property bool chatTyping: view === "workspace-expanded" && (workspaceTab === "chat" || workspaceTab === "settings")
+  readonly property bool chatTyping: view === "workspace-expanded" && (workspaceTab === "chat" || workspaceTab === "settings" || workspaceTab === "agents")
   readonly property string avatarMood: Model.avatarMood({
     approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying,
     done: assistantSource.agents.some(function(a) { return a.status === "done" })
@@ -799,6 +798,8 @@ Item {
     if (tab) workspaceTab = tab
     workspaceOpen = true
     userExpanded = true
+    // Chat and Home take the keyboard when they open (held until the chat or Home closes).
+    if (workspaceTab === "chat" || workspaceTab === "agents") { chatGrab = true; grabHovered = false }
     if (!hovered && !pinned && workspaceTab !== "chat" && workspaceTab !== "settings") {
       collapseTimer.interval = 8000
       collapseTimer.restart()
@@ -1158,9 +1159,6 @@ Item {
       return { tone: cameraActive ? greenColor : orangeColor, level: 0.85, pulse: true, period: 2400 }
     if (v === "calendar")
       return { tone: accentColor, level: 0.85, pulse: true, period: 2400 }
-    if (v === "agents" || v === "agents-expanded")
-      return { tone: herdrSource.tone, level: 0.85, pulse: herdrSource.blocked > 0 || (!!herdrSource.first && herdrSource.first.status === "working"),
-               period: herdrSource.blocked > 0 ? 1200 : 2000 }
     if (v === "approval")
       return { tone: orangeColor, level: 0.95, pulse: true, period: 900 }
     if (v === "workspace-expanded")
@@ -1234,7 +1232,7 @@ Item {
     workspaceOpen: workspaceOpen,
     hovered: hovered
   })
-  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length, agents: herdrSource.live.length,
+  readonly property var viewCounts: ({ inbox: inbox.length, outputs: audioOutputs.length,
     approval: assistantSource.approval,
     calendarSettings: calendarAdding ? calendarSource.sources.filter(function(l) { return l !== calendarSource.holidayLink }).length + 1 : 0 })
   readonly property var viewSize: {
@@ -1451,8 +1449,6 @@ Item {
       calendarSource.demo(); openCalendar()
     } else if (kind === "agents") {
       herdrSource.startDemo()
-    } else if (kind === "agents-expanded") {
-      herdrSource.startDemo(); openFocus = "agents"; expand()
     } else if (kind === "agent-done") {
       herdrSource.demoFinish()
     } else if (kind === "camera") {
@@ -1528,11 +1524,11 @@ Item {
     function endActivity(id: string, message: string): string { return activitySource.end(id, message) }
     function activities(): string { return JSON.stringify(activitySource.list()) }
     function refreshCalendar(): string { calendarSource.refresh(); return "ok" }
-    // Live herdr agents, and the list opened.
+    // Live herdr agents, and Home (the agents page) opened.
     function agents(): string { return JSON.stringify(herdrSource.live) }
     function openAgents(): string {
       if (herdrSource.live.length === 0) return "no live agents"
-      root.openFocus = "agents"; root.expand(); return "ok"
+      root.openWorkspace("agents"); return "ok"
     }
     function refreshAgents(): string { herdrSource.refresh(); return "ok" }
 
@@ -1544,10 +1540,10 @@ Item {
       return root.workspaceOpen ? root.workspaceTab : "closed"
     }
     // SUPER + A: a fresh chat starts on the defaults (Secretary, Sonnet, the default account),
-    // and typing goes straight in.
+    // and typing goes straight in (openWorkspace takes the keyboard).
     function toggleChat(): string {
       var opening = !(root.view === "workspace-expanded" && root.workspaceTab === "chat")
-      if (opening) { assistantSource.chatDefaults(); root.chatGrab = true; root.grabHovered = false }
+      if (opening) assistantSource.chatDefaults()
       return workspace("chat")
     }
     // The oldest waiting request: allow | always | deny.
@@ -2021,18 +2017,6 @@ Item {
           }
 
           ViewSlot {
-            active: root.showing("agents")
-            width: root.s(root.slotSize("agents").w); height: root.s(root.slotSize("agents").h)
-            AgentsCompact { anchors.fill: parent; island: root }
-          }
-
-          ViewSlot {
-            active: root.showing("agents-expanded")
-            width: root.s(root.slotSize("agents-expanded").w); height: root.s(root.slotSize("agents-expanded").h)
-            AgentsView { anchors.fill: parent; island: root }
-          }
-
-          ViewSlot {
             active: root.showing("clock-expanded")
             width: root.s(root.slotSize("clock-expanded").w); height: root.s(root.slotSize("clock-expanded").h)
             ClockExpanded { anchors.fill: parent; island: root }
@@ -2114,6 +2098,8 @@ Item {
           cursorShape: Qt.PointingHandCursor
           onClicked: {
             if (root.secondary === "inbox") { root.openInbox(); return }
+            // The agents bubble opens Home, with the keyboard.
+            if (root.secondary === "agents") { root.openWorkspace("agents"); return }
             root.openFocus = root.secondary
             root.expand()
           }
