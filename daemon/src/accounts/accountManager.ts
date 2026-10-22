@@ -4,9 +4,13 @@
 // shows its 5-hour and weekly usage, can make it the default for new shells,
 // and can open a herdr tab already signed in to it.
 //
-// Nothing here reads anyone's credentials. Claude numbers arrive through
-// Claude Code's own status line (island-hook --statusline), Codex numbers
-// from the Codex CLI (`codex app-server`), Ollama from its local HTTP API.
+// Claude numbers arrive through Claude Code's own status line (island-hook
+// --statusline). Team plans leave `rate_limits` out of it, so every 5 minutes
+// a profile without fresh numbers is asked about directly: its OAuth access
+// token is read from <config dir>/.credentials.json, sent only to
+// api.anthropic.com and never kept or refreshed (Claude Code owns that).
+// Codex numbers come from the Codex CLI (`codex app-server`), Ollama from its
+// local HTTP API.
 // API keys are referenced, never stored: an env var name or a command such as
 // `op read op://…` that prints the key at the moment it is needed.
 
@@ -252,7 +256,7 @@ export class AccountManager extends EventEmitter {
       model: asString(model?.display_name) || asString(model?.id) || this.status.get(p.id)?.model,
       costUsd: isNum(cost?.total_cost_usd) ? cost!.total_cost_usd as number : this.status.get(p.id)?.costUsd,
       health: "ok",
-      detail: usage ? "" : "No plan limits reported (API key session?)",
+      detail: usage || this.status.get(p.id)?.usage ? "" : "No plan limits reported (API key session?)",
     });
   }
 
@@ -263,7 +267,32 @@ export class AccountManager extends EventEmitter {
   }
 
   async pollAll(): Promise<void> {
-    await Promise.all([this.pollKind("codex"), this.pollKind("ollama"), this.pollKind("anthropic-api")]);
+    await Promise.all([this.pollKind("codex"), this.pollKind("ollama"), this.pollKind("anthropic-api"), this.pollClaude()]);
+  }
+
+  /** Plan limits for Claude profiles the status line hasn't covered in the last 5 minutes. */
+  private async pollClaude(): Promise<void> {
+    for (const p of this.file.profiles.filter((x) => x.kind === "claude")) {
+      const usage = this.status.get(p.id)?.usage;
+      if (usage && Date.now() - usage.updatedAt < 4.5 * 60_000) continue;
+      let token = "";
+      try {
+        const creds = JSON.parse(fs.readFileSync(path.join(canonicalConfigDir(p.configDir) || path.join(os.homedir(), ".claude"), ".credentials.json"), "utf8"));
+        const oauth = asObject(asObject(creds)?.claudeAiOauth);
+        const expires = oauth?.expiresAt;
+        if (!isNum(expires) || expires > Date.now()) token = asString(oauth?.accessToken);
+      } catch { /* not logged in here, or the token lives in a keychain */ }
+      if (!token) continue;
+      try {
+        const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
+          headers: { authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) continue;
+        const next = parseClaudeRateLimits(await res.json());
+        if (next) this.setStatus(p.id, { usage: next, health: "ok", detail: "" });
+      } catch { /* offline: keep the last numbers */ }
+    }
   }
 
   private async pollKind(kind: ProfileKind): Promise<void> {

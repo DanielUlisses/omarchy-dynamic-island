@@ -765,7 +765,9 @@ Item {
   property bool poked: false
   Timer { id: pokeTimer; interval: 700; onTriggered: root.poked = false }
 
-  readonly property bool chatTyping: view === "workspace-expanded" && workspaceTab === "chat"
+  // Chat and Settings have text fields: keys on demand, and no closing
+  // when the pointer leaves.
+  readonly property bool chatTyping: view === "workspace-expanded" && (workspaceTab === "chat" || workspaceTab === "settings")
   readonly property string avatarMood: Model.avatarMood({
     approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying,
     done: assistantSource.agents.some(function(a) { return a.status === "done" })
@@ -785,7 +787,7 @@ Item {
     if (tab) workspaceTab = tab
     workspaceOpen = true
     userExpanded = true
-    if (!hovered && !pinned && workspaceTab !== "chat") {
+    if (!hovered && !pinned && workspaceTab !== "chat" && workspaceTab !== "settings") {
       collapseTimer.interval = 8000
       collapseTimer.restart()
     }
@@ -1505,9 +1507,9 @@ Item {
     function refreshAgents(): string { herdrSource.refresh(); return "ok" }
 
     // Assistant (scripts/island-ctl wraps these).
-    // workspace agents | plans | chat; toggles when it is already open there.
+    // workspace agents | plans | chat | settings; toggles when it is already open there.
     function workspace(tab: string): string {
-      var t = ["agents", "plans", "chat"].indexOf(tab) !== -1 ? tab : ""
+      var t = ["agents", "plans", "chat", "settings"].indexOf(tab) !== -1 ? tab : ""
       root.openWorkspace(t)
       return root.workspaceOpen ? root.workspaceTab : "closed"
     }
@@ -1624,9 +1626,10 @@ Item {
       targetScreen: root.targetScreen
     }
     anchors { top: true; left: true; right: true }
-    // Tall enough for the biggest view (a full inbox or output list); only
-    // the island itself takes input, the rest of the strip is click-through.
-    implicitHeight: root.s(360) + root.topMargin
+    // Tall enough for the biggest view (the workspace, or a list at its
+    // longest) plus room for its shadow; only the island itself takes input,
+    // the rest of the strip is click-through.
+    implicitHeight: root.s(Model.tallestView() + 24) + root.topMargin
     color: "transparent"
 
     WlrLayershell.namespace: "dynamic-island"
@@ -1831,7 +1834,9 @@ Item {
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             cursorShape: Qt.PointingHandCursor
             onClicked: function(mouse) { root.islandClicked(mouse.button) }
-            onWheel: function(wheel) { root.adjustVolume(wheel.angleDelta.y) }
+            // Volume only from the pill: when open, a scroll the content
+            // didn't take (past the end of a diff, an empty spot) lands here.
+            onWheel: function(wheel) { if (!root.userExpanded) root.adjustVolume(wheel.angleDelta.y) }
           }
 
           // Status light along the lip, kept clear of the rounded corners.

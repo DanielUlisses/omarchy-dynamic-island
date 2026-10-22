@@ -12,12 +12,20 @@ Item {
   property var island: null
   readonly property var assistant: island.assistant
   readonly property var rows: assistant.agents
+  // Agents on this machine and the ones on herdr's SSH machines page in
+  // separate loops: hooks only reach the island from this machine, so the
+  // remote ones have status but no steps or diffs.
+  readonly property var localRows: rows.filter(function(r) { return !r.machine })
+  readonly property var remoteRows: rows.filter(function(r) { return !!r.machine })
+  property bool showRemote: false
+  readonly property bool remoteGroup: remoteRows.length > 0 && (showRemote || localRows.length === 0)
+  readonly property var group: remoteGroup ? remoteRows : localRows
   property string selectedKey: ""
   readonly property int selectedIndex: {
-    for (var i = 0; i < rows.length; i++) if (rows[i].key === selectedKey) return i
-    return rows.length > 0 ? 0 : -1
+    for (var i = 0; i < group.length; i++) if (group[i].key === selectedKey) return i
+    return group.length > 0 ? 0 : -1
   }
-  readonly property var selected: selectedIndex >= 0 ? rows[selectedIndex] : null
+  readonly property var selected: selectedIndex >= 0 ? group[selectedIndex] : null
   property var diffs: []
   property int diffIndex: 0
   readonly property string session: selected ? selected.hookSession : ""
@@ -26,10 +34,26 @@ Item {
   readonly property var terminal: selected && selected.terminal ? selected.terminal : null
 
   function page(delta) {
-    if (rows.length < 2) return
-    var i = (selectedIndex + delta + rows.length) % rows.length
-    selectedKey = rows[i].key
-    assistant.markSeen(rows[i].hookSession)
+    if (group.length < 2) return
+    var i = (selectedIndex + delta + group.length) % group.length
+    selectedKey = group[i].key
+    assistant.markSeen(group[i].hookSession)
+  }
+
+  // The avatar only cycles this machine's agents; from the remote loop it
+  // comes back to the first local one.
+  function poke() {
+    if (remoteGroup && localRows.length > 0) {
+      showRemote = false
+      selectedKey = localRows[0].key
+      assistant.markSeen(localRows[0].hookSession)
+    } else if (!remoteGroup) page(1)
+  }
+
+  function toggleRemote() {
+    showRemote = !remoteGroup
+    var list = showRemote ? remoteRows : localRows
+    if (list.length > 0) selectedKey = list[0].key
   }
 
   function load() {
@@ -124,12 +148,13 @@ Item {
         good: island.greenColor
         lookX: island.lookX
         lookY: island.lookY
-        onPoked: view.page(1)
+        onPoked: view.poke()
       }
 
-      // ‹ 1/3 › when there is more than one agent.
+      // ‹ 1/3 › when the loop shown has more than one agent.
       Row {
-        visible: view.rows.length > 1
+        id: pager
+        visible: view.group.length > 1
         anchors.right: parent.right
         anchors.rightMargin: island.s(2)
         y: face.y
@@ -137,7 +162,7 @@ Item {
         IconButton { glyph: "󰅁"; glyphSize: island.f(12); color: island.fgDim; fontFamily: island.fontFamily; onClicked: view.page(-1) }
         Text {
           anchors.verticalCenter: parent.verticalCenter
-          text: (view.selectedIndex + 1) + "/" + view.rows.length
+          text: (view.selectedIndex + 1) + "/" + view.group.length
           textFormat: Text.PlainText
           renderType: Text.NativeRendering
           font.family: island.fontFamily
@@ -145,6 +170,18 @@ Item {
           color: island.fgDim
         }
         IconButton { glyph: "󰅂"; glyphSize: island.f(12); color: island.fgDim; fontFamily: island.fontFamily; onClicked: view.page(1) }
+      }
+
+      // Switch the pager between this machine's loop and the remote one.
+      PillButton {
+        visible: view.localRows.length > 0 && view.remoteRows.length > 0
+        anchors.right: parent.right
+        anchors.rightMargin: island.s(2)
+        y: pager.visible ? pager.y + pager.height + island.s(4) : face.y
+        island: view.island
+        label: view.remoteGroup ? "󰋜 " + view.localRows.length : "󰒍 " + view.remoteRows.length
+        selected: view.remoteGroup
+        onClicked: view.toggleRemote()
       }
 
       Column {
@@ -428,6 +465,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
         text: !view.selected ? "" : (view.session ? "No file changes yet. They show up here as the agent edits."
+          : view.selected.machine ? "Remote herdr agent on " + (view.selected.label || view.selected.target || "an SSH machine") + ". Hooks only reach the island from this machine, so only its status is shown."
           : "herdr sees this agent, but it isn't reporting through island-hook, so its edits aren't tracked.")
         textFormat: Text.PlainText
         font.family: island.textFamily
