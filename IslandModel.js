@@ -51,9 +51,11 @@ function activities(flags) {
 }
 
 // -> { primary, secondary }: the pill's activity ("" for the resting pill)
-// and the bubble's.
-function slots(list) {
-  var primary = list.length > 0 && bubbleOnly.indexOf(list[0]) === -1 ? list[0] : ""
+// and the bubble's. `extraBubbleOnly` adds kinds that may not own the pill
+// right now (a meeting still hours away).
+function slots(list, extraBubbleOnly) {
+  var only = bubbleOnly.concat(extraBubbleOnly || [])
+  var primary = list.length > 0 && only.indexOf(list[0]) === -1 ? list[0] : ""
   var rest = primary ? list.slice(1) : list
   return { primary: primary, secondary: rest.length > 0 ? rest[0] : "" }
 }

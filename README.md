@@ -147,7 +147,7 @@ apply as soon as you save the file.
 | `textFont` | `"iA Writer Quattro V"` | Font for words; `"theme"` uses your theme font everywhere |
 | `glow` | `false` | Soft light behind the island in the music's color |
 | `calendars` | `[]` | iCalendar links or files for the next-meeting activity, e.g. `["https://…/basic.ics", "~/cal.ics"]` |
-| `calendarLeadMinutes` | `15` | How early a meeting appears |
+| `calendarLeadMinutes` | `15` | How early a meeting takes the pill; from two hours out it takes the side bubble over the agents |
 | `calendarExclude` | `""` | Comma-separated keywords; matching event titles are hidden |
 | `calendarRefreshMinutes` | `15` | How often calendar feeds are re-read |
 | `launchers`, `calendarLaunchers`, `launcherRules`, `browserCommand` | | How meeting links open (see Calendar settings) |

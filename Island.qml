@@ -1162,10 +1162,10 @@ Item {
   readonly property bool timerActivity: clockSource.timerActive
   readonly property bool stopwatchActivity: clockSource.stopwatchActive
   readonly property bool scriptActivity: activitySource.current !== null
-  // With music in the pill, the next meeting takes the bubble from the agents
-  // two hours out instead of only in the last `calendarLeadMinutes`.
+  // The next meeting takes the bubble from the agents two hours out, and the
+  // pill only in the last `calendarLeadMinutes`.
   readonly property bool calendarActivity: setting("calendar", true) !== false
-    && (calendarSource.soon || (mediaActivity && calendarSource.upcoming))
+    && (calendarSource.soon || calendarSource.upcoming)
   readonly property bool agentsActivity: herdrSource.live.length > 0
 
   readonly property var activityList: Model.activities({
@@ -1179,7 +1179,7 @@ Item {
     calendar: calendarActivity,
     agents: agentsActivity
   })
-  readonly property var activitySlots: Model.slots(activityList)
+  readonly property var activitySlots: Model.slots(activityList, calendarSource.soon ? [] : ["calendar"])
   readonly property string primary: activitySlots.primary
   readonly property string secondary: activitySlots.secondary
 
