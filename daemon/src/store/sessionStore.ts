@@ -35,7 +35,15 @@ export interface Session {
   added: number;
   removed: number;
   diffs: FileDiff[];
+  /** This turn's tool calls, oldest first (the island's step list). */
+  steps: Step[];
+  /** The last command and the tail of its output. */
+  terminal: Terminal | null;
 }
+
+export interface Step { tool: string; summary: string; state: "running" | "done"; at: number }
+export interface Terminal { command: string; output: string; at: number }
+const MAX_STEPS = 12;
 
 export interface QuestionOption { label: string; description?: string }
 export interface Question { question: string; header?: string; options: QuestionOption[]; multiSelect: boolean }
@@ -141,7 +149,7 @@ export class SessionStore extends EventEmitter {
         id, agent: ev.island.agent || "claude", cwd, project: path.basename(cwd).split("--")[0],
         herdrPane: ev.island.herdrPane ?? "", herdrSession: ev.island.herdrSession ?? "",
         configDir: ev.island.configDir ?? "", status: "idle", lastTool: "", lastPrompt: "", message: "",
-        startedAt: Date.now(), updatedAt: Date.now(), added: 0, removed: 0, diffs: [],
+        startedAt: Date.now(), updatedAt: Date.now(), added: 0, removed: 0, diffs: [], steps: [], terminal: null,
       };
       this.sessions.set(id, s);
     }
@@ -172,13 +180,23 @@ export class SessionStore extends EventEmitter {
         s.status = "working";
         s.lastPrompt = asString(ev.prompt).slice(0, 300);
         s.message = "";
+        s.steps = [];
         break;
       case "PreToolUse":
         s.status = "working";
         s.lastTool = `${ev.tool_name ?? ""} ${toolSummary(ev.tool_name ?? "", ev.tool_input)}`.trim();
+        s.steps.push({ tool: ev.tool_name ?? "", summary: toolSummary(ev.tool_name ?? "", ev.tool_input), state: "running", at: Date.now() });
+        if (s.steps.length > MAX_STEPS) s.steps.splice(0, s.steps.length - MAX_STEPS);
         break;
       case "PostToolUse": {
         s.status = "working";
+        const tool = ev.tool_name ?? "";
+        for (let i = s.steps.length - 1; i >= 0; i--) {
+          if (s.steps[i].tool === tool && s.steps[i].state === "running") { s.steps[i].state = "done"; break; }
+        }
+        if (tool === "Bash") {
+          s.terminal = { command: toolSummary(tool, ev.tool_input), output: asString(ev.island.output), at: Date.now() };
+        }
         const d = ev.island.diffTruncated ? null : fromToolInput(ev.tool_name ?? "", ev.tool_input);
         if (d && (d.added > 0 || d.removed > 0)) this.addDiff(s, { ...d, id: this.nextDiffId++, tool: ev.tool_name ?? "", at: Date.now() });
         break;
@@ -192,7 +210,10 @@ export class SessionStore extends EventEmitter {
       }
       case "Stop":
       case "SubagentStop":
-        if (name === "Stop") s.status = "done";
+        if (name === "Stop") {
+          s.status = "done";
+          for (const st of s.steps) st.state = "done";
+        }
         break;
       default:
         break;
@@ -351,6 +372,8 @@ export interface MergedAgent {
   removed: number;
   diffCount: number;
   configDir: string;
+  steps: Step[];
+  terminal: Terminal | null;
 }
 
 function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked: Set<string>): MergedAgent {
@@ -371,5 +394,6 @@ function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked:
     color: AGENT_COLORS[agent] ?? AGENT_COLORS.claude,
     hookSession: s?.id ?? "", lastTool: s?.lastTool ?? "", lastPrompt: s?.lastPrompt ?? "",
     added: s?.added ?? 0, removed: s?.removed ?? 0, diffCount: s?.diffs.length ?? 0, configDir: s?.configDir ?? "",
+    steps: s?.steps ?? [], terminal: s?.terminal ?? null,
   };
 }

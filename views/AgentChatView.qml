@@ -1,10 +1,10 @@
 import QtQuick
 import qs.Commons
 
-// Island Chat: talk to an agent from the island. The header picks the
-// account (any Claude login, API key or local Ollama), the model, and the
-// workspace: "Island" (the island's own tools over herdr and your sessions)
-// or "Secretary" (your secretary repo, with its rules and skills).
+// Chat: talk to an agent from the island. Chips on top pick the account (any
+// Claude login, API key or local Ollama), the model, and the workspace:
+// "Island" (the island's own tools over herdr and your sessions) or
+// "Secretary" (your secretary repo, with its rules and skills).
 //
 // Drop files on the island, or press 󰹑 to capture a screen region, to attach
 // them. Tool calls show as badges under the answer; anything that changes
@@ -23,6 +23,13 @@ Item {
     return list.length > 0 ? list[0] : null
   }
   readonly property string model: chat.model || (account ? account.defaultModel : "")
+  readonly property bool secretary: chat.workspace === "secretary"
+  readonly property var last: chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null
+  readonly property bool thinking: chat.busy && (!last || last.role === "user" || !last.text)
+  // Messages already on screen: the list is rebuilt on every update, and only
+  // new ones should rise in.
+  property var shownIds: ({})
+  onChatChanged: if (chat.messages.length === 0) shownIds = ({})
 
   function cycleAccount() {
     var list = chatAccounts
@@ -48,228 +55,353 @@ Item {
     island.chatAttachments = []
   }
 
-  Row {
-    id: header
-    x: 0
-    y: 0
-    spacing: island.s(5)
-    height: island.s(26)
+  // "claude-opus-5-5" → "Opus 5.5"
+  function modelLabel(m) {
+    var g = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/.exec(m || "")
+    if (!g) return m
+    return g[1].charAt(0).toUpperCase() + g[1].slice(1) + " " + g[2] + (g[3] && g[3].length < 3 ? "." + g[3] : "")
+  }
 
-    PillButton { island: view.island; label: view.account ? "󰀄 " + view.account.label : "No account"; onClicked: view.cycleAccount() }
-    PillButton { island: view.island; label: view.model || "model"; visible: !!view.model; onClicked: view.cycleModel() }
+  Connections {
+    target: view.island
+    function onWorkspaceTabChanged() { if (view.island.workspaceTab === "chat") input.forceActiveFocus() }
+  }
+
+  // ---- left: the avatar, listening or typing
+  OmarchyAvatar {
+    id: face
+    x: island.s(2)
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: island.s(2)
+    width: island.s(78)
+    height: width
+    mood: view.chat.busy ? "working" : (view.chat.error ? "approval" : "idle")
+    base: island.fg
+    ink: island.surface
+    accent: island.accentColor
+    glow: view.secretary ? island.accentColor : "#d97757"
+    alert: island.orangeColor
+    good: island.greenColor
+    lookX: island.lookX
+    lookY: island.lookY
+    onPoked: input.forceActiveFocus()
+  }
+
+  Item {
+    id: column
+    x: face.width + island.s(16)
+    width: parent.width - x
+    height: parent.height
+
+    // ---- chips: account · model · workspace, and New
+    Row {
+      id: header
+      spacing: island.s(6)
+      height: island.s(26)
+
+      Item {
+        width: accountChip.implicitWidth
+        height: parent.height
+        PillButton {
+          id: accountChip
+          island: view.island
+          label: "     " + (view.account ? view.account.label : "No account")
+          onClicked: view.cycleAccount()
+        }
+        Rectangle {
+          x: island.s(11)
+          anchors.verticalCenter: parent.verticalCenter
+          width: island.s(7)
+          height: width
+          radius: width / 2
+          color: view.account && view.account.health === "error" ? island.urgentColor : island.greenColor
+        }
+      }
+      PillButton { island: view.island; label: view.modelLabel(view.model); visible: !!view.model; onClicked: view.cycleModel() }
+      PillButton {
+        island: view.island
+        label: view.secretary ? "󰃖  Secretary" : "󰚩  Island"
+        visible: view.assistant.secretary.present || view.secretary
+        selected: view.secretary
+        onClicked: view.assistant.chatConfigure({ workspace: view.secretary ? "island" : "secretary" })
+      }
+    }
+
     PillButton {
+      anchors.right: parent.right
       island: view.island
-      label: view.chat.workspace === "secretary" ? "󰃖 Secretary" : "󰚩 Island"
-      visible: view.assistant.secretary.present || view.chat.workspace === "secretary"
-      selected: view.chat.workspace === "secretary"
-      onClicked: view.assistant.chatConfigure({ workspace: view.chat.workspace === "secretary" ? "island" : "secretary" })
-    }
-  }
-
-  PillButton {
-    anchors.right: parent.right
-    y: 0
-    island: view.island
-    label: "New"
-    visible: view.chat.messages.length > 0
-    onClicked: view.assistant.chatReset()
-  }
-
-  ListView {
-    id: list
-    x: 0
-    y: header.height + island.s(8)
-    width: parent.width
-    height: inputBar.y - y - island.s(8) - (attachRow.visible ? attachRow.height + island.s(4) : 0)
-    clip: true
-    spacing: island.s(6)
-    boundsBehavior: Flickable.StopAtBounds
-    model: view.chat.messages
-    onCountChanged: Qt.callLater(function() { list.positionViewAtEnd() })
-    onContentHeightChanged: if (view.chat.busy) positionViewAtEnd()
-
-    Text {
-      anchors.centerIn: parent
-      visible: list.count === 0
-      width: parent.width - island.s(60)
-      horizontalAlignment: Text.AlignHCenter
-      wrapMode: Text.WordWrap
-      text: !view.assistant.connected ? "The island daemon isn't running."
-        : view.chat.workspace === "secretary" ? "Ask your secretary: plan the day, what's booked, draft the hours…"
-        : "Ask about your agents: why is one blocked, what did it change, start a task in a new pane…"
-      textFormat: Text.PlainText
-      font.family: island.textFamily
-      font.pixelSize: island.f(11)
-      color: island.fgDim
+      label: "󰐕  New"
+      visible: view.chat.messages.length > 0
+      onClicked: view.assistant.chatReset()
     }
 
-    delegate: Item {
-      id: msg
-      required property var modelData
-      readonly property bool mine: modelData.role === "user"
-      width: ListView.view.width
-      height: bubble.height
+    ListView {
+      id: list
+      y: header.height + island.s(10)
+      width: parent.width
+      height: inputBar.y - y - island.s(8) - (attachRow.visible ? attachRow.height + island.s(6) : 0)
+      clip: true
+      spacing: island.s(10)
+      boundsBehavior: Flickable.StopAtBounds
+      model: view.chat.messages
+      onCountChanged: Qt.callLater(function() { list.positionViewAtEnd() })
+      onContentHeightChanged: if (view.chat.busy) positionViewAtEnd()
+      footer: Item {
+        width: list.width
+        height: view.thinking ? island.s(26) : 0
+        // ● ● ● while the answer hasn't started.
+        Row {
+          visible: view.thinking
+          x: island.s(4)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: island.s(5)
+          Repeater {
+            model: 3
+            delegate: Rectangle {
+              required property int index
+              width: island.s(6)
+              height: width
+              radius: width / 2
+              color: island.fgDim
+              SequentialAnimation on opacity {
+                running: view.thinking
+                loops: Animation.Infinite
+                PauseAnimation { duration: index * 160 }
+                NumberAnimation { to: 1; duration: 260 }
+                NumberAnimation { to: 0.25; duration: 260 }
+                PauseAnimation { duration: (2 - index) * 160 + 120 }
+              }
+            }
+          }
+        }
+      }
 
-      Rectangle {
-        id: bubble
-        anchors.right: msg.mine ? parent.right : undefined
-        anchors.left: msg.mine ? undefined : parent.left
-        width: Math.min(parent.width * (msg.mine ? 0.8 : 1), body.implicitWidth + island.s(20))
-        height: body.implicitHeight + badges.height + island.s(14)
-        radius: island.s(12)
-        color: msg.modelData.role === "error" ? Util.alpha(island.urgentColor, 0.16)
-          : Util.alpha(msg.mine ? island.accentColor : island.fg, msg.mine ? 0.16 : 0.05)
+      Text {
+        anchors.centerIn: parent
+        visible: list.count === 0
+        width: parent.width - island.s(40)
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.WordWrap
+        text: !view.assistant.connected ? "The island daemon isn't running."
+          : view.secretary ? "Ask your secretary: plan the day, what's booked, draft the hours…"
+          : "Ask about your agents: why is one blocked, what did it change, start a task in a new pane…"
+        textFormat: Text.PlainText
+        font.family: island.textFamily
+        font.pixelSize: island.f(12)
+        color: island.fgDim
+      }
 
-        Text {
-          id: body
-          x: island.s(10)
-          y: island.s(7)
-          width: Math.min(implicitWidth, msg.width * (msg.mine ? 0.8 : 1) - island.s(20))
-          text: (msg.modelData.attachments.length ? "📎 " + msg.modelData.attachments.join(", ") + "\n" : "")
-            + (msg.modelData.text || (view.chat.busy ? "…" : ""))
-          textFormat: msg.mine ? Text.PlainText : Text.MarkdownText
-          wrapMode: Text.Wrap
-          font.family: island.textFamily
-          font.pixelSize: island.f(11)
-          color: island.fg
-          onLinkActivated: function(link) { island.openLink(link) }
+      delegate: Item {
+        id: msg
+        required property var modelData
+        required property int index
+        readonly property bool mine: modelData.role === "user"
+        width: ListView.view.width
+        height: bubble.height
+
+        // New messages rise in.
+        opacity: 0
+        transform: Translate { id: rise; y: island.s(10) }
+        Component.onCompleted: {
+          var id = String(modelData.id)
+          if (view.shownIds[id]) { opacity = 1; rise.y = 0; return }
+          view.shownIds[id] = true
+          appear.start()
+        }
+        ParallelAnimation {
+          id: appear
+          NumberAnimation { target: msg; property: "opacity"; to: 1; duration: 240; easing.type: Easing.OutCubic }
+          NumberAnimation { target: rise; property: "y"; to: 0; duration: 300; easing.type: Easing.OutCubic }
         }
 
-        Flow {
-          id: badges
-          x: island.s(10)
-          y: body.y + body.implicitHeight + (msg.modelData.tools.length ? island.s(4) : 0)
-          width: bubble.width - island.s(20)
-          spacing: island.s(4)
-          height: msg.modelData.tools.length ? implicitHeight : 0
+        Rectangle {
+          id: bubble
+          anchors.right: msg.mine ? parent.right : undefined
+          anchors.left: msg.mine ? undefined : parent.left
+          width: msg.mine ? Math.min(parent.width * 0.8, body.implicitWidth + island.s(28)) : parent.width
+          height: body.implicitHeight + badges.height + (msg.mine ? island.s(14) : island.s(4))
+          radius: msg.mine ? Math.min(height / 2, island.s(16)) : 0
+          color: msg.modelData.role === "error" ? Util.alpha(island.urgentColor, 0.16)
+            : (msg.mine ? Util.alpha(island.fg, 0.1) : "transparent")
 
-          Repeater {
-            model: msg.modelData.tools
-            delegate: Rectangle {
-              required property var modelData
-              readonly property color tone: modelData.status === "done" ? island.greenColor
-                : (modelData.status === "running" ? island.accentColor : island.urgentColor)
-              width: badgeText.implicitWidth + island.s(12)
-              height: island.s(18)
-              radius: height / 2
-              color: Util.alpha(tone, 0.16)
+          Text {
+            id: body
+            x: msg.mine ? island.s(14) : island.s(2)
+            y: msg.mine ? island.s(7) : island.s(2)
+            width: msg.mine ? Math.min(implicitWidth, msg.width * 0.8 - island.s(28)) : msg.width - island.s(4)
+            text: (msg.modelData.attachments.length ? "📎 " + msg.modelData.attachments.join(", ") + "\n" : "")
+              + (msg.modelData.text || "")
+            textFormat: msg.mine ? Text.PlainText : Text.MarkdownText
+            wrapMode: Text.Wrap
+            lineHeight: msg.mine ? 1 : 1.12
+            font.family: island.textFamily
+            font.pixelSize: island.f(13)
+            font.weight: msg.mine ? Font.Medium : Font.Normal
+            color: island.fg
+            onLinkActivated: function(link) { island.openLink(link) }
+          }
 
-              Text {
-                id: badgeText
-                anchors.centerIn: parent
-                text: (parent.modelData.status === "running" ? "󰑮 " : parent.modelData.status === "done" ? "󰄬 " : "󰅖 ")
-                  + parent.modelData.name + (parent.modelData.summary ? " · " + parent.modelData.summary : "")
-                textFormat: Text.PlainText
-                renderType: Text.NativeRendering
-                elide: Text.ElideRight
-                width: Math.min(implicitWidth, island.s(300))
-                font.family: island.fontFamily
-                font.pixelSize: island.f(9)
-                color: parent.tone
+          Flow {
+            id: badges
+            x: body.x
+            y: body.y + body.implicitHeight + (msg.modelData.tools.length ? island.s(6) : 0)
+            width: bubble.width - island.s(8)
+            spacing: island.s(5)
+            height: msg.modelData.tools.length ? implicitHeight + island.s(2) : 0
+
+            Repeater {
+              model: msg.modelData.tools
+              delegate: Rectangle {
+                required property var modelData
+                readonly property color tone: modelData.status === "done" ? island.greenColor
+                  : (modelData.status === "running" ? island.accentColor : island.urgentColor)
+                width: badgeText.width + island.s(14)
+                height: island.s(20)
+                radius: height / 2
+                color: Util.alpha(tone, 0.14)
+
+                Text {
+                  id: badgeText
+                  anchors.centerIn: parent
+                  text: (parent.modelData.status === "running" ? "󰑮 " : parent.modelData.status === "done" ? "󰄬 " : "󰅖 ")
+                    + parent.modelData.name + (parent.modelData.summary ? " · " + parent.modelData.summary : "")
+                  textFormat: Text.PlainText
+                  renderType: Text.NativeRendering
+                  elide: Text.ElideRight
+                  width: Math.min(implicitWidth, island.s(300))
+                  font.family: island.fontFamily
+                  font.pixelSize: island.f(10)
+                  color: parent.tone
+                }
               }
             }
           }
         }
       }
     }
-  }
 
-  Row {
-    id: attachRow
-    visible: island.chatAttachments.length > 0
-    anchors.bottom: inputBar.top
-    anchors.bottomMargin: island.s(4)
-    spacing: island.s(4)
-    height: island.s(20)
+    Row {
+      id: attachRow
+      visible: island.chatAttachments.length > 0
+      anchors.bottom: inputBar.top
+      anchors.bottomMargin: island.s(6)
+      spacing: island.s(5)
+      height: island.s(22)
 
-    Repeater {
-      model: island.chatAttachments
-      delegate: Rectangle {
-        required property var modelData
-        required property int index
-        width: chip.implicitWidth + island.s(14)
-        height: island.s(20)
-        radius: height / 2
-        color: Util.alpha(island.accentColor, 0.16)
+      Repeater {
+        model: island.chatAttachments
+        delegate: Rectangle {
+          required property var modelData
+          required property int index
+          width: chip.implicitWidth + island.s(16)
+          height: island.s(22)
+          radius: height / 2
+          color: Util.alpha(island.accentColor, 0.16)
+          Text {
+            id: chip
+            anchors.centerIn: parent
+            text: "📎 " + String(parent.modelData).split("/").pop() + "  ×"
+            textFormat: Text.PlainText
+            font.family: island.textFamily
+            font.pixelSize: island.f(10)
+            color: island.fg
+          }
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { var l = island.chatAttachments.slice(); l.splice(parent.index, 1); island.chatAttachments = l }
+          }
+        }
+      }
+    }
+
+    // ---- the prompt
+    Rectangle {
+      id: inputBar
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      height: island.s(42)
+      radius: height / 2
+      color: Util.alpha(island.fg, input.activeFocus ? 0.1 : 0.07)
+      border.width: 1
+      border.color: Util.alpha(input.activeFocus ? island.accentColor : island.fg, input.activeFocus ? 0.45 : 0.06)
+      Behavior on color { ColorAnimation { duration: 180 } }
+      Behavior on border.color { ColorAnimation { duration: 180 } }
+
+      IconButton {
+        id: captureButton
+        anchors.left: parent.left
+        anchors.leftMargin: island.s(6)
+        anchors.verticalCenter: parent.verticalCenter
+        glyph: "󰹑"
+        glyphSize: island.f(14)
+        color: island.fgDim
+        fontFamily: island.fontFamily
+        onClicked: island.captureRegion()
+      }
+
+      TextInput {
+        id: input
+        anchors.left: captureButton.right
+        anchors.leftMargin: island.s(4)
+        anchors.right: sendButton.left
+        anchors.rightMargin: island.s(8)
+        anchors.verticalCenter: parent.verticalCenter
+        clip: true
+        font.family: island.textFamily
+        font.pixelSize: island.f(13)
+        color: island.fg
+        selectionColor: Util.alpha(island.accentColor, 0.4)
+        enabled: view.assistant.connected
+        focus: true
+        onAccepted: view.send()
+        Keys.onEscapePressed: island.collapse()
+
         Text {
-          id: chip
-          anchors.centerIn: parent
-          text: "📎 " + String(parent.modelData).split("/").pop() + "  ×"
+          anchors.fill: parent
+          verticalAlignment: Text.AlignVCenter
+          visible: !input.text
+          text: view.chat.messages.length > 0 ? "Continue…" : (view.secretary ? "Ask your secretary…" : "Ask the island…")
           textFormat: Text.PlainText
-          font.family: island.textFamily
-          font.pixelSize: island.f(9)
-          color: island.fg
+          font: input.font
+          color: Util.alpha(island.fg, 0.38)
+        }
+      }
+
+      // White disc with an arrow; a square to stop while it answers.
+      Rectangle {
+        id: sendButton
+        anchors.right: parent.right
+        anchors.rightMargin: island.s(6)
+        anchors.verticalCenter: parent.verticalCenter
+        width: island.s(30)
+        height: width
+        radius: width / 2
+        readonly property bool ready: view.chat.busy || input.text.trim() !== "" || island.chatAttachments.length > 0
+        color: view.chat.busy ? island.urgentColor : island.fg
+        opacity: ready ? 1 : 0.35
+        scale: sendMouse.pressed ? 0.88 : 1
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: 180 } }
+
+        Text {
+          anchors.centerIn: parent
+          text: view.chat.busy ? "󰓛" : "󰁝"
+          textFormat: Text.PlainText
+          renderType: Text.NativeRendering
+          font.family: island.fontFamily
+          font.pixelSize: island.f(15)
+          color: island.surface
         }
         MouseArea {
+          id: sendMouse
           anchors.fill: parent
           cursorShape: Qt.PointingHandCursor
-          onClicked: { var l = island.chatAttachments.slice(); l.splice(parent.index, 1); island.chatAttachments = l }
+          onClicked: view.chat.busy ? view.assistant.chatStop() : view.send()
         }
       }
-    }
-  }
-
-  Rectangle {
-    id: inputBar
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.bottom: parent.bottom
-    height: island.s(34)
-    radius: height / 2
-    color: Util.alpha(island.fg, 0.07)
-    border.width: input.activeFocus ? 1 : 0
-    border.color: Util.alpha(island.accentColor, 0.5)
-
-    IconButton {
-      id: captureButton
-      anchors.left: parent.left
-      anchors.leftMargin: island.s(4)
-      anchors.verticalCenter: parent.verticalCenter
-      glyph: "󰹑"
-      glyphSize: island.f(13)
-      color: island.fg
-      fontFamily: island.fontFamily
-      onClicked: island.captureRegion()
-    }
-
-    TextInput {
-      id: input
-      anchors.left: captureButton.right
-      anchors.leftMargin: island.s(4)
-      anchors.right: sendButton.left
-      anchors.rightMargin: island.s(4)
-      anchors.verticalCenter: parent.verticalCenter
-      clip: true
-      font.family: island.textFamily
-      font.pixelSize: island.f(12)
-      color: island.fg
-      selectionColor: Util.alpha(island.accentColor, 0.4)
-      enabled: view.assistant.connected
-      focus: true
-      onAccepted: view.send()
-      Keys.onEscapePressed: island.collapse()
-
-      Text {
-        anchors.fill: parent
-        verticalAlignment: Text.AlignVCenter
-        visible: !input.text && !input.activeFocus
-        text: "Message " + (view.chat.workspace === "secretary" ? "your secretary" : "the island") + "…"
-        textFormat: Text.PlainText
-        font: input.font
-        color: island.fgDim
-      }
-    }
-
-    IconButton {
-      id: sendButton
-      anchors.right: parent.right
-      anchors.rightMargin: island.s(4)
-      anchors.verticalCenter: parent.verticalCenter
-      glyph: view.chat.busy ? "󰓛" : "󰒊"
-      glyphSize: island.f(13)
-      color: view.chat.busy ? island.urgentColor : island.accentColor
-      fontFamily: island.fontFamily
-      onClicked: view.chat.busy ? view.assistant.chatStop() : view.send()
     }
   }
 

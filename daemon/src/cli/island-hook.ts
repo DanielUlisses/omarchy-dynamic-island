@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { asObject, encode, LineSplitter, socketPath, type Decision } from "../protocol.js";
-import { permissionReply, takesDecisions } from "./hookReply.js";
+import { outputTail, permissionReply, takesDecisions } from "./hookReply.js";
 
 const CONNECT_MS = 300;
 const FIRE_AND_FORGET_MS = 1500;
@@ -136,6 +136,8 @@ async function relay(): Promise<void> {
   const question = tool === "AskUserQuestion" ? asObject(payload.tool_input) ?? undefined : undefined;
   const suggestions = Array.isArray(payload.permission_suggestions) ? payload.permission_suggestions : undefined;
 
+  // The tail of a command's output, for the island's terminal strip.
+  const output = event === "PostToolUse" && tool === "Bash" ? outputTail(payload.tool_response) : undefined;
   for (const k of DROPPED) delete payload[k];
   const keepsDiff = event === "PostToolUse" && DIFF_TOOLS.includes(tool);
   const input = keepsDiff ? payload.tool_input : undefined;
@@ -157,6 +159,7 @@ async function relay(): Promise<void> {
     configDir: canonicalDir(process.env.CLAUDE_CONFIG_DIR),
     pid: process.ppid,
     diffTruncated: budget.cut || undefined,
+    output,
   };
 
   const waits = event === "PermissionRequest" && takesDecisions(agent);

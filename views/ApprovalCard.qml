@@ -22,7 +22,9 @@ Item {
   property var collected: ({})
   readonly property var question: approval && approval.questions && approval.questions.length > step ? approval.questions[step] : null
   readonly property int waiting: assistant.approvals.length
-  readonly property int pad: island.s(16)
+  readonly property int pad: island.s(18)
+  // The avatar's column on the left (not in the workspace banner).
+  readonly property int lead: compact ? 0 : island.s(86)
   readonly property color tone: island.orangeColor
   property var picked: []
 
@@ -39,32 +41,33 @@ Item {
     assistant.decide(approval.id, { answers: next })
   }
 
+  OmarchyAvatar {
+    id: face
+    visible: !card.compact
+    x: card.pad
+    anchors.verticalCenter: parent.verticalCenter
+    width: island.s(68)
+    height: width
+    mood: "approval"
+    base: island.fg
+    ink: island.surface
+    accent: island.accentColor
+    alert: card.tone
+    good: island.greenColor
+    lookX: island.lookX
+    lookY: island.lookY
+  }
+
   Item {
     id: header
-    x: card.pad
+    x: card.pad + card.lead
     y: card.pad
-    width: parent.width - card.pad * 2
+    width: parent.width - card.pad * 2 - card.lead
     height: island.s(22)
-
-    OmarchyAvatar {
-      id: face
-      visible: !card.compact
-      anchors.left: parent.left
-      anchors.verticalCenter: parent.verticalCenter
-      width: island.s(22)
-      height: width
-      mood: "approval"
-      base: island.fg
-      accent: island.accentColor
-      alert: card.tone
-      lookX: island.lookX
-      lookY: island.lookY
-    }
 
     Text {
       id: title
-      anchors.left: face.visible ? face.right : parent.left
-      anchors.leftMargin: face.visible ? island.s(10) : 0
+      anchors.left: parent.left
       anchors.right: count.left
       anchors.rightMargin: island.s(8)
       anchors.verticalCenter: parent.verticalCenter
@@ -74,7 +77,7 @@ Item {
       renderType: Text.NativeRendering
       elide: Text.ElideRight
       font.family: island.textFamily
-      font.pixelSize: island.f(13)
+      font.pixelSize: island.f(14)
       font.weight: Font.DemiBold
       color: island.fg
     }
@@ -98,12 +101,14 @@ Item {
   Rectangle {
     id: what
     visible: !card.question
-    x: card.pad
-    y: header.y + header.height + island.s(8)
-    width: parent.width - card.pad * 2
-    height: island.s(card.compact ? 34 : 56)
-    radius: island.s(12)
-    color: Util.alpha(island.fg, 0.06)
+    x: header.x
+    y: header.y + header.height + island.s(10)
+    width: header.width
+    height: island.s(card.compact ? 34 : 54)
+    radius: island.s(14)
+    color: Util.alpha(island.fg, 0.07)
+    border.width: 1
+    border.color: Util.alpha(island.fg, 0.06)
     clip: true
 
     Text {
@@ -138,9 +143,9 @@ Item {
   Text {
     id: questionText
     visible: !!card.question
-    x: card.pad
+    x: header.x
     y: header.y + header.height + island.s(6)
-    width: parent.width - card.pad * 2
+    width: header.width
     height: island.s(30)
     text: card.question ? card.question.question : ""
     textFormat: Text.PlainText
@@ -156,9 +161,9 @@ Item {
   ListView {
     id: options
     visible: !!card.question
-    x: card.pad
+    x: header.x
     y: questionText.y + questionText.height + island.s(6)
-    width: parent.width - card.pad * 2
+    width: header.width
     height: parent.height - y - card.pad - (card.question && card.question.multiSelect ? island.s(38) : 0)
     clip: true
     spacing: island.s(4)
@@ -171,8 +176,9 @@ Item {
       readonly property bool chosen: card.picked.indexOf(modelData.label) !== -1
       width: ListView.view.width
       height: island.s(30)
-      radius: island.s(10)
+      radius: island.s(12)
       color: Util.alpha(opt.chosen ? card.tone : island.fg, optMouse.containsMouse ? 0.16 : (opt.chosen ? 0.2 : 0.06))
+      Behavior on color { ColorAnimation { duration: 140 } }
 
       Text {
         anchors.left: parent.left

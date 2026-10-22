@@ -55,3 +55,23 @@ test("hook sessions merge into their herdr pane and a pending approval wins", as
   assert.ok(store.isAlwaysAllowed("s1", "Bash"));
   assert.equal(store.approvals().length, 0);
 });
+
+test("a turn's tool calls become steps, and Bash leaves its output tail", async () => {
+  const { outputTail } = await import("../src/cli/hookReply.js");
+  assert.equal(outputTail({ stdout: "a\nb\n\u001b[32mPASS\u001b[0m tests\n", stderr: "" }), "a\nb\nPASS tests");
+  assert.equal(outputTail(undefined), undefined);
+  const store = new SessionStore();
+  const base = { session_id: "s2", cwd: "/x/app", island: { agent: "claude" as const } };
+  store.ingest({ ...base, hook_event_name: "UserPromptSubmit", prompt: "fix tva" });
+  store.ingest({ ...base, hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/x/app/invoice.ts" } });
+  store.ingest({ ...base, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: "/x/app/invoice.ts" } });
+  store.ingest({ ...base, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "npm test" } });
+  let m = store.merged()[0];
+  assert.deepEqual(m.steps.map((s) => `${s.tool}:${s.state}`), ["Read:done", "Bash:running"]);
+  store.ingest({ ...base, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "npm test" }, island: { agent: "claude", output: "Tests: 48 passed" } });
+  store.ingest({ ...base, hook_event_name: "Stop" });
+  m = store.merged()[0];
+  assert.equal(m.status, "done");
+  assert.deepEqual(m.terminal && [m.terminal.command, m.terminal.output], ["npm test", "Tests: 48 passed"]);
+  assert.ok(m.steps.every((s) => s.state === "done"));
+});

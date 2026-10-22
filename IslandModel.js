@@ -32,8 +32,8 @@ var sizes = {
   "activity-expanded": { w: 392, h: 104, r: 38 },
   "calendar-expanded": { w: 500, h: 262, r: 40 },
   "notification-actions": { w: 404, h: 118, r: 38 },
-  "approval":      { w: 460, h: 156, r: 38 },
-  "workspace-expanded": { w: 640, h: 344, r: 40 }
+  "approval":      { w: 540, h: 164, r: 40 },
+  "workspace-expanded": { w: 720, h: 400, r: 44 }
 }
 
 // Compact activities in priority order. The first one present owns the pill;
@@ -137,7 +137,7 @@ function approvalSize(approval) {
   var q = approval.questions && approval.questions.length > 0 ? approval.questions[0] : null
   if (!q) return sizes["approval"]
   var rows = Math.max(1, Math.min(4, q.options.length))
-  return { w: 460, h: 16 + 22 + 8 + 36 + rows * 34 + (rows - 1) * 4 + (q.multiSelect ? 38 : 0) + 18, r: 38 }
+  return { w: 540, h: 18 + 22 + 6 + 36 + rows * 34 + (rows - 1) * 4 + (q.multiSelect ? 38 : 0) + 20, r: 40 }
 }
 
 function sizeFor(view, counts, notch) {
@@ -1248,11 +1248,29 @@ function diffText(added, removed) {
   return "+" + (added || 0) + " -" + (removed || 0)
 }
 
+// An editor-tab badge for a file: two letters and the language's colour.
+var languages = {
+  ts: ["TS", "#3178c6"], tsx: ["TS", "#3178c6"], js: ["JS", "#c9a400"], jsx: ["JS", "#c9a400"], mjs: ["JS", "#c9a400"],
+  py: ["PY", "#3572a5"], go: ["GO", "#00add8"], rs: ["RS", "#b7410e"], rb: ["RB", "#cc342d"], java: ["JV", "#b07219"],
+  qml: ["QM", "#41cd52"], sh: ["SH", "#4eaa25"], bash: ["SH", "#4eaa25"], lua: ["LU", "#000080"], md: ["MD", "#6e7681"],
+  json: ["{}", "#8a6d00"], yaml: ["YM", "#cb171e"], yml: ["YM", "#cb171e"], toml: ["TM", "#9c4221"], tf: ["TF", "#7b42bc"],
+  css: ["CS", "#663399"], html: ["HT", "#e34c26"], sql: ["SQ", "#e38c00"], c: ["C", "#555555"], cpp: ["C+", "#f34b7d"],
+  cs: ["C#", "#178600"], php: ["PH", "#4f5d95"], swift: ["SW", "#f05138"], kt: ["KT", "#a97bff"], nix: ["NX", "#7e7eff"]
+}
+function languageOf(path) {
+  var name = String(path || "").split("/").pop()
+  var ext = name.indexOf(".") > 0 ? name.split(".").pop().toLowerCase() : ""
+  if (name === "Dockerfile") return { badge: "DK", color: "#384d54" }
+  var l = languages[ext]
+  return l ? { badge: l[0], color: l[1] } : { badge: (ext || "··").slice(0, 2).toUpperCase(), color: "#6e7681" }
+}
+
 // The avatar's state, most pressing first.
 function avatarMood(s) {
   if (s.approval) return "approval"
   if (s.poked) return "poked"
   if (s.working) return "working"
+  if (s.done) return "done"
   if (s.music) return "music"
   return "idle"
 }
@@ -1274,17 +1292,24 @@ function highlightLine(text, c) {
   var out = ""
   var re = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)/g
   var last = 0, m
+  function paint(color, t) { return "<font color=\"" + color + "\">" + escapeHtml(t) + "</font>" }
+  // Keywords and numbers in one pass over the raw text, so nothing matches
+  // inside markup added earlier.
   function plain(t) {
-    return escapeHtml(t)
-      .replace(codeKeywords, "<span style=\"color:" + c.keyword + "\">$1</span>")
-      .replace(/\b(\d+(?:\.\d+)?)\b/g, "<span style=\"color:" + c.number + "\">$1</span>")
+    var res = "", at = 0, k
+    var tok = new RegExp(codeKeywords.source + "|\\b(\\d+(?:\\.\\d+)?)\\b", "g")
+    while ((k = tok.exec(t)) !== null) {
+      res += escapeHtml(t.substring(at, k.index)) + paint(k[1] ? c.keyword : c.number, k[0])
+      at = k.index + k[0].length
+    }
+    return res + escapeHtml(t.substring(at))
   }
   while ((m = re.exec(code)) !== null) {
     out += plain(code.substring(last, m.index))
-    out += "<span style=\"color:" + c.string + "\">" + escapeHtml(m[0]) + "</span>"
+    out += paint(c.string, m[0])
     last = m.index + m[0].length
   }
   out += plain(code.substring(last))
-  if (rest) out += "<span style=\"color:" + c.comment + "\">" + escapeHtml(rest) + "</span>"
+  if (rest) out += paint(c.comment, rest)
   return out
 }

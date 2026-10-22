@@ -109,6 +109,8 @@ export interface HookEvent {
     configDir?: string;
     pid?: number;
     diffTruncated?: boolean;
+    /** PostToolUse of Bash: the tail of what it printed. */
+    output?: string;
   };
   [key: string]: unknown;
 }

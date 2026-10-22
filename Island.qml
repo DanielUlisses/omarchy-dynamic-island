@@ -767,7 +767,8 @@ Item {
 
   readonly property bool chatTyping: view === "workspace-expanded" && workspaceTab === "chat"
   readonly property string avatarMood: Model.avatarMood({
-    approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying
+    approval: approvalActive, poked: poked, working: assistantSource.working, music: mediaPlaying,
+    done: assistantSource.agents.some(function(a) { return a.status === "done" })
   })
   // Who the avatar glows for: the busy agent's own colour.
   readonly property color avatarGlow: assistantSource.workingAgent ? assistantSource.workingAgent.color

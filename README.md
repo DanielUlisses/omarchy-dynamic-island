@@ -297,16 +297,18 @@ omarchy-shell dynamic-island demo agents     # preview: agents, agents-expanded,
 With the island's daemon running, the island becomes a small personal
 assistant for your coding agents. An Omarchy avatar sits in the resting pill
 (drawn in your theme, tinted by the agent at work, its eyes following the
-pointer) with a plan gauge beside it. The avatar idles, spins while an agent
-works, glows orange when one needs you and dances to music. Poke it to open
-the workspace.
+pointer) with a plan gauge beside it. It breathes and blinks when idle, reads
+along with a typing badge while an agent works, hops with an amber "!" when one
+needs you, smiles with a green check when it finishes, and bobs to music. Poke it to open
+the workspace: icon tabs for Home, Chat and Plans, and + to start a new agent in
+herdr.
 
 | Piece | What it does |
 |---|---|
 | Approval card | When Claude Code asks for permission, the island opens by itself with the command or file, and **Allow**, **Always** (adds Claude's suggested rule), **Deny** and **Pane** (jump to its herdr pane). Questions (`AskUserQuestion`) show their options, one step at a time. Answering in the terminal instead works too; the card goes away |
-| Agents & Diffs | herdr's agents merged with every Claude Code session that reports through the hooks, each with its live `+N -M`, and the files it changed, one diff at a time (the last 50 per session, up to 4,000 lines each) |
-| Claude Plans | Every account's 5-hour and weekly usage, when each resets ("Resets in 1h 42m"), how many sessions use it, **Default** (new shells use it) and **herdr** (open a tab signed in to it). The pill is green below 50 %, orange to 80 % and red above |
-| Island Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island. Pick the model in the header. Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
+| Home | One agent at a time (‹ › pages through them, the one that needs you first): its avatar, what it did this turn step by step (Read ✓, Edit ✓, Bash …, Done), the file it is changing shown like an editor tab, and the last command with the tail of its output (PASS/FAIL). Every session's diffs are kept (the last 50 per session, up to 4,000 lines each) |
+| Plans | Every account's 5-hour and weekly usage, when each resets ("Resets in 1h 42m"), how many sessions use it, **Default** (new shells use it) and **herdr** (open a tab signed in to it). The pill is green below 50 %, orange to 80 % and red above |
+| Chat | Chat with Claude (any of your logins or an API key) or a local Ollama model from the island. Pick the model in the header. Drop files on the island or press 󰹑 to capture a region with grim and slurp. The chat can list your agents, read a pane, see a session's diffs, and, after you allow it on the approval card, type into a pane, open a new herdr pane or apply a patch |
 
 Set it up once from a checkout:
 

@@ -44,8 +44,8 @@ Item {
       readonly property var a: modelData
       readonly property bool hasPlan: !!a.fiveHour || !!a.sevenDay
       width: ListView.view.width
-      height: island.s(hasPlan ? 78 : 46)
-      radius: island.s(14)
+      height: island.s(hasPlan ? 84 : 50)
+      radius: island.s(16)
       color: Util.alpha(a.active ? island.accentColor : island.fg, a.active ? 0.1 : 0.04)
       border.width: a.active ? 1 : 0
       border.color: Util.alpha(island.accentColor, 0.3)

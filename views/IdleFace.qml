@@ -24,13 +24,15 @@ Item {
     anchors.left: parent.left
     anchors.leftMargin: island.s(8)
     anchors.verticalCenter: parent.verticalCenter
-    width: island.s(18)
+    width: island.s(22)
     height: width
     mood: island.avatarMood
     base: island.fg
     accent: island.accentColor
     glow: island.avatarGlow
     alert: island.orangeColor
+    ink: island.surface
+    good: island.greenColor
     lookX: island.lookX
     lookY: island.lookY
     onPoked: island.openWorkspace("")
