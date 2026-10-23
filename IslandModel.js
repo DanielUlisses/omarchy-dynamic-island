@@ -1010,6 +1010,14 @@ function isMicStream(node) {
   return name.indexOf("peak") === -1 && name.indexOf("monitor") === -1 && name.indexOf("cava") === -1
 }
 
+// A microphone stream held by something other than voxtype's own meeting
+// capture (its ALSA input and the parec loopback): the call itself.
+function isCallMicStream(node) {
+  if (!isMicStream(node)) return false
+  var name = String(node.name || "").toLowerCase()
+  return name.indexOf("voxtype") === -1 && name !== "parec"
+}
+
 // Pull `colorN = "#rrggbb"` pairs out of a theme's colors.toml.
 function parseColors(text) {
   var out = {}

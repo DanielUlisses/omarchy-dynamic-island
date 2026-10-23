@@ -9,6 +9,9 @@ Item {
   property var island: null
   readonly property var cal: island.calendar
   readonly property bool started: cal.started
+  // A meeting being transcribed owns this view until it stops, whatever the
+  // calendar says is next.
+  readonly property bool recording: island.transcription.busy
 
   Text {
     id: glyph
@@ -28,19 +31,21 @@ Item {
     anchors.right: parent.right
     anchors.rightMargin: island.s(14)
     anchors.verticalCenter: parent.verticalCenter
-    text: view.cal.countdown
+    text: view.recording
+      ? Math.max(0, Math.floor((view.cal.now - island.transcription.startedAt) / 60000)) + "m"
+      : view.cal.countdown
     textFormat: Text.PlainText
     renderType: Text.NativeRendering
     font.family: island.textFamily
     font.pixelSize: island.f(12)
     font.weight: Font.DemiBold
-    color: view.started ? island.urgentColor : island.accentColor
+    color: view.started || view.recording ? island.urgentColor : island.accentColor
   }
 
   // Transcribe this meeting (mic + speakers, Whisper, Ollama summary): shown once it is on or
   // about to start, and while one is being recorded.
-  readonly property bool canTranscribe: island.transcription.available && !!cal.next
-    && (view.started || island.transcription.busy || cal.next.start - Date.now() < 15 * 60 * 1000)
+  readonly property bool canTranscribe: island.transcription.available
+    && (view.recording || !!cal.next && (view.started || cal.next.start - Date.now() < 15 * 60 * 1000))
 
   Rectangle {
     id: micButton
@@ -79,7 +84,7 @@ Item {
     anchors.right: view.canTranscribe ? micButton.left : countdown.left
     anchors.rightMargin: island.s(10)
     anchors.verticalCenter: parent.verticalCenter
-    text: view.cal.next ? view.cal.next.title : ""
+    text: view.recording ? island.transcription.title || "Meeting" : view.cal.next ? view.cal.next.title : ""
     color: island.fg
     fontFamily: island.textFamily
     pixelSize: island.f(12)

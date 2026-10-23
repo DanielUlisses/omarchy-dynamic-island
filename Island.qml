@@ -308,6 +308,12 @@ Item {
       if (Model.isMicStream(pwNodes[i])) return true
     return false
   }
+  // The mic held by a call app, not by voxtype recording it.
+  readonly property bool callMicActive: {
+    for (var i = 0; i < pwNodes.length; i++)
+      if (Model.isCallMicStream(pwNodes[i])) return true
+    return false
+  }
 
   // ------------------------------------------------------------------
   // Power (UPower): charging and low-battery HUDs
@@ -1187,7 +1193,9 @@ Item {
   readonly property bool scriptActivity: activitySource.current !== null
   // The next meeting takes the bubble from the agents two hours out, and the
   // pill only in the last `calendarLeadMinutes`.
-  readonly property bool calendarActivity: setting("calendar", true) !== false
+  // A meeting being transcribed keeps the pill (and its stop button) until it
+  // stops, even once its calendar slot has passed.
+  readonly property bool calendarActivity: transcriptionSource.busy || setting("calendar", true) !== false
     && (calendarSource.soon || calendarSource.upcoming)
   readonly property bool agentsActivity: herdrSource.live.length > 0
 
@@ -1200,10 +1208,10 @@ Item {
     stopwatch: stopwatchActivity,
     activity: scriptActivity,
     calendar: calendarActivity,
-    calendarStarted: calendarActivity && calendarSource.started,
+    calendarStarted: calendarActivity && (calendarSource.started || transcriptionSource.busy),
     agents: agentsActivity
   })
-  readonly property var activitySlots: Model.slots(activityList, calendarSource.soon ? [] : ["calendar"])
+  readonly property var activitySlots: Model.slots(activityList, calendarSource.soon || transcriptionSource.busy ? [] : ["calendar"])
   readonly property string primary: activitySlots.primary
   readonly property string secondary: activitySlots.secondary
 
