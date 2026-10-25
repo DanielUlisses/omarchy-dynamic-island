@@ -81,6 +81,10 @@ mkdir -p "$units"
 cat >"$units/$unit" <<EOF
 [Unit]
 Description=Omarchy Dynamic Island agent daemon (hooks, approvals, plans, chat)
+# Started with the graphical session, not at login: the session's WAYLAND_DISPLAY, DISPLAY and
+# XDG_SESSION_TYPE reach the systemd user manager only then, and the agents the daemon spawns
+# need them to open a browser (xdg-open, Python's webbrowser).
+PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
@@ -90,10 +94,11 @@ RestartSec=3
 Environment=PATH=$bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 if systemctl --user daemon-reload 2>/dev/null; then
-  systemctl --user enable "$unit" >/dev/null 2>&1 || true
+  # reenable: drops an older install's default.target link
+  systemctl --user reenable "$unit" >/dev/null 2>&1 || true
   systemctl --user restart "$unit"
 else
   echo "  no systemd user session; the island starts $bin/island-agent-daemon by itself"
