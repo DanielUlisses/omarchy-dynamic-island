@@ -34,7 +34,7 @@
       "url": "https://tk-hub.example.ts.net/#/ticket/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07",
       "answer": {
         "method": "POST",
-        "path": "/api/tickets/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07/answer"
+        "path": "/api/boards/dev-bss:/home/daniel/app:export-csv/tickets/07/answer"
       }
     },
     {

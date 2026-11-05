@@ -59,7 +59,8 @@ export function cleanBase(value: unknown): string {
   }
 }
 
-const PATH_RE = /^\/api\/[A-Za-z0-9_\-./%]{1,200}$/;
+// Board keys go in raw ("dev-bss:/home/daniel/app:export-csv"), so ":", "~", "@" and "+" too.
+const PATH_RE = /^\/api\/[A-Za-z0-9_\-./%:~@+]{1,400}$/;
 
 /** A hub route the island may call: under /api/, no way back up, nothing but the path. */
 export function validPath(p: unknown): p is string {
@@ -415,7 +416,7 @@ export class HubBridge {
     if (!a.answer) throw new HubError(0, "the hub can't answer this one: open it in the hub");
     if (!Number.isInteger(option) || option < 0 || option >= a.dialog.options.length) throw new HubError(0, "not one of its options");
     try {
-      return await this.request("POST", a.answer.path, { option, question: a.answerQuestion }, TIMEOUT_MS);
+      return await this.request("POST", a.answer.path, { option, question: a.answerQuestion || null }, TIMEOUT_MS);
     } finally {
       this.lastPoll = 0;
       void this.poll();
