@@ -20,7 +20,12 @@ Item {
   // Hooks only reach the island from this machine, so only local sessions have
   // steps and diffs; herdr publishes a status for every agent it runs, on any machine.
   readonly property var localRows: rows.filter(function(r) { return !!r.hookSession })
-  readonly property var herdrRows: rows.filter(function(r) { return !!r.pane })
+  // herdr's rows and tk-hub's devbox agents (no pane: the hub opens them).
+  readonly property var herdrRows: rows.filter(function(r) { return !!r.pane || r.source === "hub" })
+  readonly property var hub: assistant.hub
+  // "hub offline · 3 min" while the hub doesn't answer (the last list stays).
+  readonly property string hubLine: !hub.configured ? "" : (hub.online ? "hub"
+    : "hub offline" + (hub.lastOkAt > 0 ? " · " + Math.max(1, Math.round((assistant.now - hub.lastOkAt) / 60000)) + " min" : ""))
   property bool showHerdr: false
   readonly property bool herdrGroup: herdrRows.length > 0 && (showHerdr || localRows.length === 0)
   readonly property var group: herdrGroup ? herdrRows : localRows
@@ -67,7 +72,7 @@ Item {
   }
 
   // Ctrl+H local / herdr, Ctrl+A next agent (same as clicking the avatar), Ctrl+Shift+A the previous one, Ctrl+O open it in herdr; ← → page.
-  function openSelected() { if (selected && selected.pane) island.openAgentByKey(selected.key) }
+  function openSelected() { if (selected && (selected.pane || selected.source === "hub")) island.openAgentByKey(selected.key) }
   Keys.onPressed: function(e) {
     var ctrl = (e.modifiers & Qt.ControlModifier) && !(e.modifiers & (Qt.AltModifier | Qt.MetaModifier))
     if (ctrl && e.key === Qt.Key_H) { if (localRows.length > 0 && herdrRows.length > 0) toggleHerdr() }
@@ -156,7 +161,8 @@ Item {
       width: island.s(360)
       horizontalAlignment: Text.AlignHCenter
       wrapMode: Text.WordWrap
-      text: view.assistant.connected ? "No agents running. Start Claude Code anywhere, or press + for a new one in herdr."
+      text: view.assistant.connected ? (view.hub.configured && !view.hub.online ? "The hub isn't answering" + (view.hub.error ? ": " + view.hub.error : ".")
+          : "No agents running. Start Claude Code anywhere, or press + for a new one in herdr.")
         : "The island daemon isn't running. Run ./install-hooks.sh once to set it up."
       textFormat: Text.PlainText
       font.family: island.textFamily
@@ -389,19 +395,33 @@ Item {
       }
 
       Text {
+        id: stateText
         visible: steps.count === 0
         x: island.s(4)
         y: steps.y
         width: parent.width - island.s(4)
         wrapMode: Text.WordWrap
-        maximumLineCount: 4
         elide: Text.ElideRight
-        text: !view.selected ? "" : (view.selected.lastPrompt ? "“" + view.selected.lastPrompt + "”"
-          : (view.selected.hookSession ? "Waiting for a prompt" : Model.agentStateText(view.selected.status)))
+        maximumLineCount: view.selected && view.selected.dialog ? 8 : 4
+        // A hub agent at a dialog: its question and options (answer it in the hub).
+        text: !view.selected ? "" : (view.selected.dialog ? Model.hubDialogText(view.selected.dialog)
+          : (view.selected.lastPrompt ? "“" + view.selected.lastPrompt + "”"
+          : (view.selected.hookSession ? "Waiting for a prompt"
+          : (view.selected.ask && view.selected.ask.title ? view.selected.ask.title : Model.agentStateText(view.selected.status)))))
         textFormat: Text.PlainText
         font.family: island.textFamily
         font.pixelSize: island.f(11)
         color: island.fgDim
+      }
+
+      // No Allow / Deny from the island for a devbox agent: the hub answers it.
+      PillButton {
+        visible: !!view.selected && view.selected.source === "hub" && stateText.visible
+        x: island.s(4)
+        y: stateText.y + stateText.height + island.s(8)
+        island: view.island
+        label: "󰖟 Open in hub"
+        onClicked: view.openSelected()
       }
     }
 
@@ -417,6 +437,30 @@ Item {
       border.width: 1
       border.color: Util.alpha(island.fg, 0.06)
       clip: true
+
+      // The hub's state: a green dot when it answers, grey (with how long) when not.
+      Row {
+        id: hubState
+        visible: view.hubLine !== ""
+        anchors.right: parent.right
+        anchors.rightMargin: island.s(12)
+        y: island.s(10)
+        z: 2
+        spacing: island.s(5)
+        Rectangle {
+          anchors.verticalCenter: parent.verticalCenter
+          width: island.s(7); height: width; radius: width / 2
+          color: view.hub.online ? island.greenColor : Util.alpha(island.fg, 0.35)
+        }
+        Text {
+          text: view.hubLine
+          textFormat: Text.PlainText
+          renderType: Text.NativeRendering
+          font.family: island.textFamily
+          font.pixelSize: island.f(10)
+          color: island.fgDim
+        }
+      }
 
       ListView {
         id: herdrList
@@ -513,7 +557,10 @@ Item {
               Text {
                 width: parent.width
                 elide: Text.ElideRight
-                text: hrow.r ? view.agentName(hrow.r.agent) + "  ·  " + Model.agentStateText(hrow.r.status)
+                text: !hrow.r ? "" : hrow.r.source === "hub"
+                  ? [hrow.r.nn ? "#" + hrow.r.nn : "", Model.agentStateText(hrow.r.status), hrow.r.client || hrow.r.machine,
+                     hrow.r.dialog && hrow.r.dialog.question ? hrow.r.dialog.question : hrow.r.title].filter(function(x) { return x }).join("  ·  ")
+                  : hrow.r ? view.agentName(hrow.r.agent) + "  ·  " + Model.agentStateText(hrow.r.status)
                   + (hrow.r.machine ? "  ·  " + (hrow.r.label || hrow.r.target || "remote") : "")
                   + (hrow.r.title && hrow.r.project ? "  ·  " + hrow.r.title : "") : ""
                 textFormat: Text.PlainText
@@ -537,7 +584,7 @@ Item {
               Text {
                 id: goText
                 anchors.centerIn: parent
-                text: "󰁔  Go"
+                text: hrow.r && hrow.r.source === "hub" ? "󰖟  Hub" : "󰁔  Go"
                 textFormat: Text.PlainText
                 renderType: Text.NativeRendering
                 font.family: island.fontFamily

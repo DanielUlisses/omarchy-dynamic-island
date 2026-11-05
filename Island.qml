@@ -825,7 +825,7 @@ Item {
     if (ap && ap.herdrPane && openAgentByKey("local/" + ap.herdrPane)) return "ok"
     var rows = assistantSource.agents
     for (var i = 0; i < rows.length; i++)
-      if (rows[i].pane && (rows[i].status === "blocked" || rows[i].status === "done" || rows[i].status === "working")
+      if ((rows[i].pane || rows[i].source === "hub") && (rows[i].status === "blocked" || rows[i].status === "done" || rows[i].status === "working")
           && openAgentByKey(rows[i].key)) return rows[i].key
     if (herdrSource.first) { openAgent(herdrSource.first); return herdrSource.first.key }
     return "no agent"
@@ -903,6 +903,64 @@ Item {
   // grab below is derived from it and can never get out of step with it.
   property bool calendarAdding: false
   readonly property bool calendarTyping: calendarAdding && view === "calendar-expanded"
+
+  // ---- tk-hub's meetings: the ◉ capture mark and Capture to hub
+  function hubMeetingFor(ev) { return Model.hubMeetingFor(ev, assistantSource.hub.meetings) }
+
+  // A call the hub wants captured was recorded and its transcript saved:
+  // { meeting, transcript, at } until it is captured (or two hours pass).
+  property var pendingCapture: null
+  Connections {
+    target: transcriptionSource
+    function onCaptureReady(meeting, transcript) {
+      root.pendingCapture = { meeting: meeting, transcript: transcript, at: Date.now() }
+      root.edgeSweep++
+      root.showHud({ key: "capture", layout: "toast", title: "Capture to hub", icon: "◉", color: root.accentColor,
+                     body: (meeting.title || "The call") + " · click to send it to the secretary", capture: true, duration: 20000 })
+    }
+  }
+
+  // Island Chat in Secretary mode runs the secretary's call-capture skill with
+  // the hub meeting's id and the transcript.
+  function captureToHub() {
+    var p = pendingCapture
+    if (!p || Date.now() - p.at > 2 * 3600000) { pendingCapture = null; return "nothing to capture" }
+    if (!assistantSource.connected || !assistantSource.secretary.present) {
+      showHud({ key: "capture", layout: "label", label: "Needs the secretary in Island Chat", icon: "󰀦", valueText: "", color: orangeColor, duration: 2600 })
+      return "no secretary"
+    }
+    if (assistantSource.chat.busy) {
+      showHud({ key: "capture", layout: "label", label: "Island Chat is busy", icon: "󰀦", valueText: "", color: orangeColor, duration: 2400 })
+      return "chat busy"
+    }
+    pendingCapture = null
+    assistantSource.chatReset()
+    assistantSource.chatConfigure({ workspace: "secretary" })
+    assistantSource.chatSend(Model.captureRequest(p.meeting, p.transcript), [])
+    openWorkspace("chat")
+    return "capturing"
+  }
+
+  // ---- tk-hub's next move, opened from the ticker (views/MoveCard.qml)
+  property bool moveOpen: false
+  // The move as it was when opened, so a poll can't swap it under the click.
+  property var openMove: null
+  readonly property var nextMove: assistantSource.hub.moves && assistantSource.hub.moves.length > 0 ? assistantSource.hub.moves[0] : null
+
+  function openMoveCard() {
+    if (!nextMove) return
+    hud = null
+    inboxOpen = false
+    outputsOpen = false
+    calendarOpen = false
+    openMove = nextMove
+    moveOpen = true
+    userExpanded = true
+    if (!hovered) {
+      collapseTimer.interval = 8000
+      collapseTimer.restart()
+    }
+  }
 
   function openCalendar() {
     hud = null
@@ -1107,6 +1165,9 @@ Item {
       items.push({ key: "event", text: "󰃭 " + Model.untilText(next.start, idleClock.date.getTime()), color: accentColor })
     var festivals = calendar.todayAllDay
     if (festivals.length > 0) items.push({ key: "festival", text: "✦ " + festivals[0], color: orangeColor })
+    // tk-hub's next move; a click on it opens its card.
+    if (nextMove) items.push({ key: "move", text: "󰁔 " + (nextMove.title.length > 28 ? nextMove.title.slice(0, 27) + "…" : nextMove.title),
+                               color: accentColor })
     if (notifications.doNotDisturb) items.push({ key: "dnd", text: "󰂛 Silenced", color: orangeColor })
     // What the coding agents changed this session, from the hook relay.
     if (assistantSource.connected) {
@@ -1228,6 +1289,7 @@ Item {
     inboxOpen: inboxOpen,
     outputsOpen: outputsOpen,
     calendarOpen: calendarOpen,
+    moveOpen: moveOpen,
     focus: openFocus,
     hasMedia: hasMedia,
     recording: recordingActivity,
@@ -1288,6 +1350,7 @@ Item {
     outputsOpen = false
     calendarOpen = false
     calendarAdding = false
+    moveOpen = false
     openFocus = ""
     collapseTimer.stop()
   }
@@ -1331,10 +1394,17 @@ Item {
     }
     // The approval card and the workspace answer through their own buttons.
     if (view === "approval" || view === "workspace-expanded") return
+    // Capture to hub: send the saved transcript to the secretary.
+    if (!userExpanded && view === "hud-toast" && hud && hud.capture) { hud = null; captureToHub(); return }
     // A toast about one agent: clicking it lands on that agent.
     if (!userExpanded && view === "hud-toast" && hud && hud.agentKey) {
       var agent = herdrSource.find(hud.agentKey)
       if (agent) { openAgent(agent); return }
+    }
+    // The ticker showing the hub's next move: open its card.
+    if (!userExpanded && (view === "idle" || view === "idle-hover") && idleItem && idleItem.key === "move" && nextMove) {
+      openMoveCard()
+      return
     }
     // The bell owns the pill when nothing else is live: open the inbox.
     if (!userExpanded && primary === "inbox") {
@@ -1586,6 +1656,8 @@ Item {
       root.transcription.toggle(title)
       return was ? "stopping" : "recording"
     }
+    // Send the last captured call's transcript to the secretary's call-capture.
+    function captureToHub(): string { return root.captureToHub() }
     function calendar(): string { root.openCalendar(); return "ok" }
     function toggleCalendar(): string {
       if (root.view === "calendar-expanded") { root.collapse(); return "closed" }
@@ -2058,6 +2130,12 @@ Item {
             active: root.showing("workspace-expanded")
             width: root.s(root.slotSize("workspace-expanded").w); height: root.s(root.slotSize("workspace-expanded").h)
             WorkspaceView { anchors.fill: parent; island: root }
+          }
+
+          ViewSlot {
+            active: root.showing("move-expanded")
+            width: root.s(root.slotSize("move-expanded").w); height: root.s(root.slotSize("move-expanded").h)
+            MoveCard { anchors.fill: parent; island: root }
           }
 
           ViewSlot {

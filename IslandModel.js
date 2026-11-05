@@ -21,6 +21,7 @@ var sizes = {
   "recording-expanded": { w: 392, h: 76, r: 34 },
   "recording-media-expanded": { w: 404, h: 145, r: 40 },
   "idle-expanded": { w: 424, h: 150, r: 40 },
+  "move-expanded": { w: 424, h: 140, r: 40 },
   "notification":  { w: 404, h: 78, r: 34 },
   "inbox":         { w: 200, h: 32, r: 16 },
   "timer":         { w: 236, h: 32, r: 16 },
@@ -77,6 +78,7 @@ function viewFor(state) {
   if (state.userExpanded && state.inboxOpen) return "inbox-expanded"
   if (state.userExpanded && state.outputsOpen) return "outputs-expanded"
   if (state.userExpanded && state.calendarOpen) return "calendar-expanded"
+  if (state.userExpanded && state.moveOpen) return "move-expanded"
   if (state.userExpanded) {
     // Recording takes the top of an opened island so it can be stopped from
     // there; music, if any, rides along underneath.
@@ -820,6 +822,9 @@ function herdrChanges(prev, agents, primed) {
     var was = prev[a.key]
     if (was === a.status) continue
     if (a.status === "blocked") out.push({ agent: a, kind: "blocked" })
+    // A hub agent is done only at a hub milestone (review, the human gate, a
+    // PR): the hub says `done`. Going quiet between turns is not news.
+    else if (a.source === "hub") { if (a.status === "done") out.push({ agent: a, kind: "done" }) }
     // Finished: `done` if nobody was looking, `idle` if its pane was in view.
     else if (was === "working" && (a.status === "done" || a.status === "idle")) out.push({ agent: a, kind: "done" })
     else if (was === "blocked" && a.status === "done") out.push({ agent: a, kind: "done" })
@@ -840,6 +845,83 @@ function agentTitle(a) {
       || /^(claude( code)?|codex|opencode|gemini( cli)?|amp|pi|cursor( agent)?)$/i.test(t))
     return agentPlace(a) || t || a.agent || a.pane
   return t
+}
+
+// A hub agent's dialog in a few lines: the question, then its options.
+function hubDialogText(dialog) {
+  if (!dialog) return ""
+  var lines = []
+  if (dialog.question) lines.push(dialog.question)
+  else if (dialog.text) lines.push(String(dialog.text).split("\n").slice(-3).join(" ").trim())
+  var options = dialog.options || []
+  for (var i = 0; i < options.length; i++) lines.push((i + 1) + ". " + options[i])
+  return lines.join("\n")
+}
+
+// tk-hub's pages, as its navbar names them (hub-web's command.ts PAGES).
+var hubPages = [
+  { page: "today", names: ["today", "home"] }, { page: "calendar", names: ["calendar"] },
+  { page: "timeline", names: ["timeline"] }, { page: "projects", names: ["projects"] },
+  { page: "insights", names: ["insights"] }, { page: "sessions", names: ["sessions"] },
+  { page: "inbox", names: ["inbox"] }, { page: "cards", names: ["cards"] },
+  { page: "live", names: ["live", "live board", "board", "boards"] }, { page: "devboxes", names: ["devboxes", "devbox"] },
+  { page: "finance", names: ["finance"] }, { page: "ask", names: ["ask"] }
+]
+
+// Hub mode in Island Chat: the words as a jump, when they name one. "#07"
+// (or "export-csv#07") is that ticket's page, a board's name the page of its
+// most urgent agent, a page's name ("today", "live board") that page, and a
+// project the hub's meetings name its Projects page. -> { url, label } or null,
+// and then the words go to the hub as a question.
+function hubJump(text, agents, meetings, hubUrl) {
+  var base = String(hubUrl || "").replace(/\/+$/, "")
+  if (!base) return null
+  var t = String(text || "").trim().toLowerCase().replace(/^(go to|open|jump to|show)\s+/, "").replace(/[.!]+$/, "").trim()
+  if (!t || t.length > 60) return null
+  var hub = (agents || []).filter(function(a) { return a.source === "hub" && a.url })
+  var urgent = function(list) {
+    var order = { blocked: 0, done: 1, working: 2, idle: 3 }
+    return list.slice().sort(function(a, b) { return (order[a.status] === undefined ? 4 : order[a.status]) - (order[b.status] === undefined ? 4 : order[b.status]) })
+  }
+  var m = /^([a-z0-9][a-z0-9._-]*)?\s*#\s*(\d{1,3})$/.exec(t)
+  if (m) {
+    var nn = m[2].length < 2 ? "0" + m[2] : m[2]
+    var hits = urgent(hub.filter(function(a) {
+      return (a.nn === nn || a.nn === m[2]) && (!m[1] || String(a.project || a.board || "").toLowerCase() === m[1])
+    }))
+    return hits.length > 0 ? { url: hits[0].url, label: "#" + hits[0].nn + " " + (hits[0].title || "") } : null
+  }
+  for (var i = 0; i < hubPages.length; i++)
+    if (hubPages[i].names.indexOf(t) !== -1) return { url: base + "/#/" + hubPages[i].page, label: hubPages[i].page }
+  var onBoard = urgent(hub.filter(function(a) { return String(a.project || "").toLowerCase() === t }))
+  if (onBoard.length > 0) return { url: onBoard[0].url, label: onBoard[0].project + " #" + onBoard[0].nn }
+  var projects = (meetings || []).map(function(x) { return String(x.project || "").toLowerCase() })
+  if (projects.indexOf(t) !== -1) return { url: base + "/#/projects", label: "projects" }
+  return null
+}
+
+// The hub's meeting for a calendar event: the same ICS UID and the same start
+// (a recurring series shares its UID, so the start picks the instance).
+function hubMeetingFor(ev, meetings) {
+  if (!ev || !ev.uid) return null
+  var list = meetings || []
+  for (var i = 0; i < list.length; i++)
+    if (list[i].uid === ev.uid && Math.abs(Number(list[i].start) - Number(ev.start)) < 60000) return list[i]
+  return null
+}
+
+// What Island Chat's Secretary is asked to run after a captured call.
+function captureRequest(meeting, transcript) {
+  return "Run the call-capture skill for tk-hub meeting " + meeting.id
+    + (meeting.title ? " (\"" + meeting.title + "\")" : "")
+    + ". The transcript is at " + transcript + "."
+}
+
+// A hub page the island may open: only on the configured hub.
+function hubLink(url, hubUrl) {
+  var u = String(url || ""), base = String(hubUrl || "").replace(/\/+$/, "")
+  if (!base || !/^https?:\/\//.test(base)) return ""
+  return u === base || u.indexOf(base + "/") === 0 ? u : ""
 }
 
 function agentStateText(status) {
@@ -1046,6 +1128,22 @@ function entryFor(cfg, pluginId) {
 }
 
 // Senders that are feedback noise rather than messages (Omarchy's rule).
+// A browser notification from one of `origins` (setting `quietOrigins`, e.g.
+// "claude.ai"): Chrome or Chromium, with the site's host (or a subdomain of
+// it) named in the summary or body, where Chrome puts the origin.
+function quietOrigin(app, desktopEntry, text, origins) {
+  if (!/chrom/i.test(String(app || "")) && !/chrom/i.test(String(desktopEntry || ""))) return false
+  var list = Array.isArray(origins) ? origins : []
+  var hosts = String(text || "").toLowerCase().match(/[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/g) || []
+  for (var i = 0; i < list.length; i++) {
+    var o = String(list[i] || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+    if (!o) continue
+    for (var j = 0; j < hosts.length; j++)
+      if (hosts[j] === o || hosts[j].slice(-(o.length + 1)) === "." + o) return true
+  }
+  return false
+}
+
 function isEphemeralApp(appName) {
   var name = String(appName || "")
   return name === "notify-send" || name === "omarchy-action"
@@ -1173,11 +1271,14 @@ var defaultSettings = {
   bluetooth: true,
   camera: true,
   calendar: true,
-  herdr: true,
+  herdr: "auto",
   herdrToasts: true,
   herdrInterval: 5,
+  hubUrl: "",
+  hubInterval: 10,
   notifications: true,
   inbox: true,
+  quietOrigins: ["claude.ai"],
   osd: true,
   volume: true,
   brightness: true,

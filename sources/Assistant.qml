@@ -33,6 +33,9 @@ Item {
   property var herdrAgents: []
   property var totals: ({ added: 0, removed: 0 })
   property var secretary: ({ path: "", present: false })
+  // tk-hub (daemon/src/hub/hubBridge.ts): whether it is set up and answering,
+  // its counts, Today's first moves and its meetings.
+  property var hub: ({ configured: false, url: "", online: false, lastOkAt: 0, error: "", counts: {}, moves: [], meetings: [] })
   property var chat: ({ busy: false, messages: [], profileId: "", model: "", workspace: "island", error: "" })
 
   // Transcribed meetings, newest first (daemon: meetings.list).
@@ -140,6 +143,7 @@ Item {
     herdrAgents = s.herdr ? (s.herdr.agents || []) : []
     totals = s.totals || ({ added: 0, removed: 0 })
     secretary = s.secretary || ({ path: "", present: false })
+    if (s.hub) hub = s.hub
   }
 
   // ---- actions
@@ -168,10 +172,16 @@ Item {
   function chatConfigure(opts) { call("chat.configure", opts) }
   function chatDefaults() { call("chat.defaults", {}) }
   function chatStop() { call("chat.stop", {}) }
+  function chatNote(text, answer) { call("chat.note", { text: text, answer: answer }) }
   function chatReset() { call("chat.reset", {}) }
 
   function chatSend(text, files, done) {
     call("chat.send", { text: text, files: files || [] }, function(r, err) { if (done) done(!!r, err) })
+  }
+
+  // A tk-hub move's action or Later (which: "action" | "later").
+  function hubMove(id, which, done) {
+    call("hub.move", { id: id, which: which }, function(r, err) { if (done) done(!!r, err) })
   }
 
   function refreshMeetings() {

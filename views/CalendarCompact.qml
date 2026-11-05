@@ -78,8 +78,24 @@ Item {
     }
   }
 
-  Marquee {
+  // ◉: the hub wants this call captured (its meeting matched by ICS UID + start).
+  readonly property var hubMeeting: !view.recording && cal.next ? island.hubMeetingFor(cal.next) : null
+  Text {
+    id: captureMark
+    visible: !!view.hubMeeting && view.hubMeeting.capture
     anchors.left: glyph.right
+    anchors.leftMargin: island.s(5)
+    anchors.verticalCenter: parent.verticalCenter
+    text: "◉"
+    textFormat: Text.PlainText
+    renderType: Text.NativeRendering
+    font.family: island.fontFamily
+    font.pixelSize: island.f(10)
+    color: island.urgentColor
+  }
+
+  Marquee {
+    anchors.left: captureMark.visible ? captureMark.right : glyph.right
     anchors.leftMargin: island.s(10)
     anchors.right: view.canTranscribe ? micButton.left : countdown.left
     anchors.rightMargin: island.s(10)

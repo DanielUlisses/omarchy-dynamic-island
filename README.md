@@ -89,6 +89,10 @@ commands, so Omarchy's keybinds and scripts keep working:
 Omarchy's own quick feedback toasts ("Theme changed" and similar) show as
 banners but don't pile up in the inbox.
 
+Chrome's notifications from the sites in `quietOrigins` (`claude.ai` by
+default) skip the banner and go straight to the inbox: with tk-hub set up the
+island already says what the agents are doing.
+
 To go back to Omarchy's notifications, set `"notifications": false` in the
 island's settings. Disabling or removing the plugin also hands
 notifications back automatically.
@@ -159,11 +163,14 @@ apply as soon as you save the file.
 | `markdownEditor` | `"typora"` | What opens a meeting's summary and transcript (falls back to `xdg-open` when it isn't installed) |
 | `meetingsDir` | `~/.local/share/omarchy-dynamic-island/meetings` | Where those files go |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
-| `herdr` | `true` | Show herdr agents (see below) |
+| `herdr` | `"auto"` | Ask herdr for its agents (see below): `"auto"` does it only while `hubUrl` is empty, `true` always, `false` never |
 | `herdrToasts` | `true` | Toast when an agent needs you or finishes |
 | `herdrInterval` | `5` | Seconds between asks to every herdr machine |
+| `hubUrl` | `""` | Your [tk-hub](#tk-hub), e.g. `"https://tk-hub.example.ts.net"`; empty for none |
+| `hubInterval` | `10` | Seconds between asks to the hub |
 | `notifications` | `true` | Show notifications in the island (replaces Omarchy's notification popups) |
 | `inbox` | `true` | Show the bell for notifications waiting in the inbox |
+| `quietOrigins` | `["claude.ai"]` | Sites whose Chrome notifications go straight to the inbox, with no banner |
 | `osd` | `true` | Show Omarchy's on-screen popups (volume, brightness, mic, …) in the island instead of at the bottom |
 | `volume`, `brightness`, `charging`, `trackChange`, `recording`, `mic` | `true` | Turn individual activities off |
 
@@ -292,6 +299,61 @@ The island asks every enabled machine at once every `herdrInterval` seconds
 (`herdr --machine <id> agent list`). A machine that doesn't answer keeps what
 it last reported. The local server is only asked while it is running, so the
 island never starts one.
+
+## tk-hub
+
+With `hubUrl` set, the devbox agents come from tk-hub instead of herdr: the
+daemon asks `GET {hubUrl}/api/desktop` every `hubInterval` seconds and the
+hub's agents fill the same rows, bubble and toasts herdr's did (herdr polling
+goes off unless `herdr` is `true`; island-hook's local sessions stay). The
+request carries a `desktop` token, read from
+`~/.config/omarchy-dynamic-island/hub-token`, which must be `0600`; it never
+goes in shell.json.
+
+```bash
+# on the hub box
+hub-server token add desktop --kind desktop
+# here, with the token it printed
+install -m 600 /dev/null ~/.config/omarchy-dynamic-island/hub-token
+printf '%s' '<token>' > ~/.config/omarchy-dynamic-island/hub-token
+```
+
+then `"hubUrl": "https://<your hub>"` in the island's shell.json entry (and
+`"herdr": "auto"` if an older island wrote `true` there). When the hub doesn't
+answer, the island keeps the last list and Home shows a grey dot and
+"hub offline · N min".
+
+A hub agent toasts when it needs you, with the agent's question and its
+options when it is at a dialog, and when it reaches a hub milestone (review,
+your gate, a PR); going quiet between turns is not news. Clicking the toast,
+a hub row's **Hub** button or **Open in hub** in Home opens that ticket's page
+in the hub's Chrome app window (`omarchy-launch-webapp`, as SUPER+SHIFT+H
+does). The island doesn't answer a devbox agent's dialog yet: do that in the
+hub.
+
+The resting ticker also flips to the hub's next move (the first of Today's
+"Your moves"). Click the island while it shows it to open the move's card:
+what it is and why, its action (Start, Review, ...), **Later** to set it
+aside, and **Open** for its page in the hub. The action and Later call only
+the routes the hub gave for that move.
+
+Island Chat gets a **Hub** mode beside Island and Secretary (the chip, or
+**Ctrl+A** to cycle): a question goes to the hub's `POST /api/ask` and its
+answer shows in the chat, each one following the last until **New**. `#07`
+(or `board#07`), a board's name or a hub page's name (Today, Live board,
+Projects, ...) opens that page in the hub instead. A project name the hub's
+meetings mention opens Projects, since the island doesn't know the hub's
+project ids.
+
+The calendar stays on the island's own iCalendar links; the hub's meetings
+are matched to them by UID and start. A call the hub wants captured shows a
+red ◉ beside the next-meeting pill. Capture runs after the call (voxtype's
+transcript is only written once it ends): when the recording of such a call
+stops and the transcript is saved, a **Capture to hub** toast appears (click
+it, or **◉ Capture to hub** in the opened resting island, or
+`omarchy-shell dynamic-island captureToHub`). It opens Island Chat in
+Secretary mode and asks the secretary to run its `call-capture` skill with
+the hub meeting's id and the transcript's path.
 
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON

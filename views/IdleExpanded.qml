@@ -88,6 +88,18 @@ Item {
     }
   }
 
+  // A recorded call still waiting to go to the hub.
+  PillButton {
+    visible: !!island.pendingCapture
+    anchors.right: parent.right
+    anchors.rightMargin: view.pad
+    y: island.s(70)
+    island: view.island
+    filled: true
+    label: "◉ Capture to hub"
+    onClicked: island.captureToHub()
+  }
+
   // One-tap timers and the stopwatch.
   Row {
     anchors.horizontalCenter: parent.horizontalCenter

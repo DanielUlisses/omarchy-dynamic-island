@@ -11,6 +11,7 @@ import type { AccountManager } from "./accounts/accountManager.js";
 import type { AgentChat } from "./chat/agentChat.js";
 import { deleteMeeting, listMeetings } from "./meetings/meetings.js";
 import type { HerdrBridge } from "./herdr/herdrBridge.js";
+import type { HubBridge } from "./hub/hubBridge.js";
 import {
   asObject, asString, encode, LineSplitter, RPC_INTERNAL, RPC_INVALID_PARAMS, RPC_METHOD_NOT_FOUND, RPC_PARSE_ERROR,
   stateDir, type Decision, type HookEvent, type RpcNotification, type RpcRequest,
@@ -26,6 +27,7 @@ interface Client { sock: net.Socket; subscribed: boolean }
 export interface Services {
   store: SessionStore;
   herdr: HerdrBridge;
+  hub: HubBridge;
   accounts: AccountManager;
   chat: AgentChat;
   /** Report hold/resume of approvals to herdr (pane.report_agent). */
@@ -111,7 +113,8 @@ export class IslandServer {
       agents,
       approvals: this.s.store.approvals(),
       accounts: this.s.accounts.snapshot(this.s.store.sessionsByConfigDir()),
-      herdr: { available: this.s.herdr.available, agents: this.s.store.herdrAgents },
+      herdr: { available: this.s.herdr.available || this.s.hub.configured, agents: this.s.store.herdrAgents },
+      hub: this.s.hub.snapshot(),
       totals: { added: agents.reduce((n, a) => n + a.added, 0), removed: agents.reduce((n, a) => n + a.removed, 0) },
       secretary: { path: this.s.accounts.secretaryPath(), present: fs.existsSync(path.join(this.s.accounts.secretaryPath(), "CLAUDE.md")) },
     };
@@ -179,7 +182,16 @@ export class IslandServer {
       case "diffs.get": return { session: asString(p.session), diffs: store.diffs(asString(p.session)) };
       case "session.seen": store.markSeen(asString(p.id)); return {};
       case "session.clearDiffs": store.clearDiffs(asString(p.id)); return {};
-      case "herdr.refresh": await herdr.poll(); return {};
+      case "herdr.refresh":
+        if (herdr.running) await herdr.poll();
+        await this.s.hub.poll();
+        return {};
+      case "hub.refresh": await this.s.hub.poll(); return {};
+      case "hub.move": {
+        const which = p.which === "later" ? "later" : p.which === "action" ? "action" : null;
+        if (!which) throw new RpcError(RPC_INVALID_PARAMS, "which must be action or later");
+        return { result: await this.s.hub.runMove(asString(p.id), which) };
+      }
 
       case "accounts.setActive": accounts.setActive(asString(p.id)); return {};
       case "accounts.refresh": await accounts.pollAll(); return {};
@@ -197,7 +209,7 @@ export class IslandServer {
         chat.configure({
           profileId: typeof p.profileId === "string" ? p.profileId : undefined,
           model: typeof p.model === "string" ? p.model : undefined,
-          workspace: p.workspace === "secretary" || p.workspace === "island" ? p.workspace : undefined,
+          workspace: p.workspace === "secretary" || p.workspace === "island" || p.workspace === "hub" ? p.workspace : undefined,
         });
         return {};
       case "chat.send": {
@@ -208,6 +220,7 @@ export class IslandServer {
         void chat.send(text || "(see the attached files)", files).catch(() => undefined);
         return { accepted: true };
       }
+      case "chat.note": chat.note(asString(p.text), asString(p.answer)); return {};
       case "chat.stop": chat.stop(); return {};
       case "chat.reset": chat.reset(); return {};
       case "chat.capture": return { path: await captureRegion() };
