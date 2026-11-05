@@ -1067,6 +1067,22 @@ function entryFor(cfg, pluginId) {
 }
 
 // Senders that are feedback noise rather than messages (Omarchy's rule).
+// A browser notification from one of `origins` (setting `quietOrigins`, e.g.
+// "claude.ai"): Chrome or Chromium, with the site's host (or a subdomain of
+// it) named in the summary or body, where Chrome puts the origin.
+function quietOrigin(app, desktopEntry, text, origins) {
+  if (!/chrom/i.test(String(app || "")) && !/chrom/i.test(String(desktopEntry || ""))) return false
+  var list = Array.isArray(origins) ? origins : []
+  var hosts = String(text || "").toLowerCase().match(/[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/g) || []
+  for (var i = 0; i < list.length; i++) {
+    var o = String(list[i] || "").toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+    if (!o) continue
+    for (var j = 0; j < hosts.length; j++)
+      if (hosts[j] === o || hosts[j].slice(-(o.length + 1)) === "." + o) return true
+  }
+  return false
+}
+
 function isEphemeralApp(appName) {
   var name = String(appName || "")
   return name === "notify-send" || name === "omarchy-action"
@@ -1201,6 +1217,7 @@ var defaultSettings = {
   hubInterval: 10,
   notifications: true,
   inbox: true,
+  quietOrigins: ["claude.ai"],
   osd: true,
   volume: true,
   brightness: true,

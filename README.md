@@ -89,6 +89,10 @@ commands, so Omarchy's keybinds and scripts keep working:
 Omarchy's own quick feedback toasts ("Theme changed" and similar) show as
 banners but don't pile up in the inbox.
 
+Chrome's notifications from the sites in `quietOrigins` (`claude.ai` by
+default) skip the banner and go straight to the inbox: with tk-hub set up the
+island already says what the agents are doing.
+
 To go back to Omarchy's notifications, set `"notifications": false` in the
 island's settings. Disabling or removing the plugin also hands
 notifications back automatically.
@@ -166,6 +170,7 @@ apply as soon as you save the file.
 | `hubInterval` | `10` | Seconds between asks to the hub |
 | `notifications` | `true` | Show notifications in the island (replaces Omarchy's notification popups) |
 | `inbox` | `true` | Show the bell for notifications waiting in the inbox |
+| `quietOrigins` | `["claude.ai"]` | Sites whose Chrome notifications go straight to the inbox, with no banner |
 | `osd` | `true` | Show Omarchy's on-screen popups (volume, brightness, mic, …) in the island instead of at the bottom |
 | `volume`, `brightness`, `charging`, `trackChange`, `recording`, `mic` | `true` | Turn individual activities off |
 

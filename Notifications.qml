@@ -76,6 +76,10 @@ Item {
     inbox = inbox.filter(function(e) { return e.ref !== n })
     if (inbox.length !== before) saveInbox()
 
+    // Quiet sites (claude.ai by default): Chrome's notification goes to the
+    // inbox with no banner; the hub already says what the agents do.
+    if (isQuiet(entry, n)) { addToInbox(entry); return }
+
     if (doNotDisturb && !bypassesDnd(entry)) {
       // Silenced: no banner, straight to the inbox so nothing is missed.
       if (Model.isEphemeralApp(entry.app)) n.tracked = false
@@ -124,6 +128,12 @@ Item {
       glyph: fields.glyph || "", execArgv: "", critical: fields.critical === true, low: false,
       timeout: 0, actions: fields.actions || [], time: Date.now()
     }].concat(banners)
+  }
+
+  function isQuiet(entry, n) {
+    var origins = island ? island.setting("quietOrigins", ["claude.ai"]) : ["claude.ai"]
+    return Model.quietOrigin(entry.app, entry.desktopEntry,
+      [entry.summary, String(n.body || ""), entry.body].join("\n"), origins)
   }
 
   // Omarchy's rule: its own action toasts, and bare `notify-send` criticals.
