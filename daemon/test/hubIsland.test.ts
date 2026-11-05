@@ -38,3 +38,9 @@ test("Chrome notifications from a quiet origin are recognised", () => {
   assert.equal(M.quietOrigin("Slack", "", "claude.ai\nhi", quiet), false);
   assert.equal(M.quietOrigin("Google Chrome", "", "claude.ai", []), false);
 });
+
+test("an opened next move shows its card", () => {
+  assert.equal(M.viewFor({ userExpanded: true, moveOpen: true }), "move-expanded");
+  assert.equal(M.viewFor({ userExpanded: false, moveOpen: true, hovered: false }), "idle");
+  assert.equal(M.sizeFor("move-expanded", {}, null).w, 424);
+});

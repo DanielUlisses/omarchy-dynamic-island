@@ -904,6 +904,27 @@ Item {
   property bool calendarAdding: false
   readonly property bool calendarTyping: calendarAdding && view === "calendar-expanded"
 
+  // ---- tk-hub's next move, opened from the ticker (views/MoveCard.qml)
+  property bool moveOpen: false
+  // The move as it was when opened, so a poll can't swap it under the click.
+  property var openMove: null
+  readonly property var nextMove: assistantSource.hub.moves && assistantSource.hub.moves.length > 0 ? assistantSource.hub.moves[0] : null
+
+  function openMoveCard() {
+    if (!nextMove) return
+    hud = null
+    inboxOpen = false
+    outputsOpen = false
+    calendarOpen = false
+    openMove = nextMove
+    moveOpen = true
+    userExpanded = true
+    if (!hovered) {
+      collapseTimer.interval = 8000
+      collapseTimer.restart()
+    }
+  }
+
   function openCalendar() {
     hud = null
     inboxOpen = false
@@ -1107,6 +1128,9 @@ Item {
       items.push({ key: "event", text: "󰃭 " + Model.untilText(next.start, idleClock.date.getTime()), color: accentColor })
     var festivals = calendar.todayAllDay
     if (festivals.length > 0) items.push({ key: "festival", text: "✦ " + festivals[0], color: orangeColor })
+    // tk-hub's next move; a click on it opens its card.
+    if (nextMove) items.push({ key: "move", text: "󰁔 " + (nextMove.title.length > 28 ? nextMove.title.slice(0, 27) + "…" : nextMove.title),
+                               color: accentColor })
     if (notifications.doNotDisturb) items.push({ key: "dnd", text: "󰂛 Silenced", color: orangeColor })
     // What the coding agents changed this session, from the hook relay.
     if (assistantSource.connected) {
@@ -1228,6 +1252,7 @@ Item {
     inboxOpen: inboxOpen,
     outputsOpen: outputsOpen,
     calendarOpen: calendarOpen,
+    moveOpen: moveOpen,
     focus: openFocus,
     hasMedia: hasMedia,
     recording: recordingActivity,
@@ -1288,6 +1313,7 @@ Item {
     outputsOpen = false
     calendarOpen = false
     calendarAdding = false
+    moveOpen = false
     openFocus = ""
     collapseTimer.stop()
   }
@@ -1335,6 +1361,11 @@ Item {
     if (!userExpanded && view === "hud-toast" && hud && hud.agentKey) {
       var agent = herdrSource.find(hud.agentKey)
       if (agent) { openAgent(agent); return }
+    }
+    // The ticker showing the hub's next move: open its card.
+    if (!userExpanded && (view === "idle" || view === "idle-hover") && idleItem && idleItem.key === "move" && nextMove) {
+      openMoveCard()
+      return
     }
     // The bell owns the pill when nothing else is live: open the inbox.
     if (!userExpanded && primary === "inbox") {
@@ -2058,6 +2089,12 @@ Item {
             active: root.showing("workspace-expanded")
             width: root.s(root.slotSize("workspace-expanded").w); height: root.s(root.slotSize("workspace-expanded").h)
             WorkspaceView { anchors.fill: parent; island: root }
+          }
+
+          ViewSlot {
+            active: root.showing("move-expanded")
+            width: root.s(root.slotSize("move-expanded").w); height: root.s(root.slotSize("move-expanded").h)
+            MoveCard { anchors.fill: parent; island: root }
           }
 
           ViewSlot {

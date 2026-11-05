@@ -21,6 +21,7 @@ var sizes = {
   "recording-expanded": { w: 392, h: 76, r: 34 },
   "recording-media-expanded": { w: 404, h: 145, r: 40 },
   "idle-expanded": { w: 424, h: 150, r: 40 },
+  "move-expanded": { w: 424, h: 140, r: 40 },
   "notification":  { w: 404, h: 78, r: 34 },
   "inbox":         { w: 200, h: 32, r: 16 },
   "timer":         { w: 236, h: 32, r: 16 },
@@ -77,6 +78,7 @@ function viewFor(state) {
   if (state.userExpanded && state.inboxOpen) return "inbox-expanded"
   if (state.userExpanded && state.outputsOpen) return "outputs-expanded"
   if (state.userExpanded && state.calendarOpen) return "calendar-expanded"
+  if (state.userExpanded && state.moveOpen) return "move-expanded"
   if (state.userExpanded) {
     // Recording takes the top of an opened island so it can be stopped from
     // there; music, if any, rides along underneath.

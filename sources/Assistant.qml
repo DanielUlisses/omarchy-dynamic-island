@@ -178,6 +178,11 @@ Item {
     call("chat.send", { text: text, files: files || [] }, function(r, err) { if (done) done(!!r, err) })
   }
 
+  // A tk-hub move's action or Later (which: "action" | "later").
+  function hubMove(id, which, done) {
+    call("hub.move", { id: id, which: which }, function(r, err) { if (done) done(!!r, err) })
+  }
+
   function refreshMeetings() {
     call("meetings.list", {}, function(r) { if (r) meetings = r.meetings || [] })
   }

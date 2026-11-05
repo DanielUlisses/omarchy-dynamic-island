@@ -331,6 +331,12 @@ in the hub's Chrome app window (`omarchy-launch-webapp`, as SUPER+SHIFT+H
 does). The island doesn't answer a devbox agent's dialog yet: do that in the
 hub.
 
+The resting ticker also flips to the hub's next move (the first of Today's
+"Your moves"). Click the island while it shows it to open the move's card:
+what it is and why, its action (Start, Review, ...), **Later** to set it
+aside, and **Open** for its page in the hub. The action and Later call only
+the routes the hub gave for that move.
+
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON
 omarchy-shell dynamic-island openAgents      # open the list

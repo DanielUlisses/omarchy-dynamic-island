@@ -187,6 +187,11 @@ export class IslandServer {
         await this.s.hub.poll();
         return {};
       case "hub.refresh": await this.s.hub.poll(); return {};
+      case "hub.move": {
+        const which = p.which === "later" ? "later" : p.which === "action" ? "action" : null;
+        if (!which) throw new RpcError(RPC_INVALID_PARAMS, "which must be action or later");
+        return { result: await this.s.hub.runMove(asString(p.id), which) };
+      }
 
       case "accounts.setActive": accounts.setActive(asString(p.id)); return {};
       case "accounts.refresh": await accounts.pollAll(); return {};

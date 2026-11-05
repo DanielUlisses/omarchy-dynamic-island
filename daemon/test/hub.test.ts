@@ -140,3 +140,20 @@ test("no token: offline with the reason, nothing sent", async () => {
   assert.equal(seen.length, 0);
   assert.match(hub.snapshot().error, /no token/);
 });
+
+test("a move runs only the path the hub gave for it, then polls again", async () => {
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  const hub = new HubBridge(() => undefined, {
+    settings: () => hubSettings({ hubUrl: BASE }),
+    token: () => ({ token: "tok", error: "" }),
+    fetch: fakeFetch([{ status: 200, body: fixture() }, { status: 200, body: { ok: true } }, { status: 200, body: fixture() }], seen),
+  });
+  hub.start();
+  hub.stop();
+  for (let i = 0; i < 20 && !hub.snapshot().online; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(await hub.runMove("task:42", "action"), { ok: true });
+  assert.equal(seen[1].url, BASE + "/api/tasks/42/start");
+  assert.equal(seen[1].init.method, "POST");
+  await assert.rejects(hub.runMove("ask:dev-bss/export-csv#07", "action"), /only opens/);
+  await assert.rejects(hub.runMove("nope", "later"), /no longer/);
+});

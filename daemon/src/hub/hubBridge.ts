@@ -374,6 +374,24 @@ export class HubBridge {
     this.onChange();
   }
 
+  /**
+   * Runs a move's action or its Later: only the method and path the hub gave
+   * for that move in its last answer, so the island can't be made to call
+   * any other route. Polls again after, so Today's next move shows.
+   */
+  async runMove(id: string, which: "action" | "later"): Promise<unknown> {
+    const move = this.desktop?.moves.find((m) => m.id === id);
+    if (!move) throw new HubError(0, "that move is no longer on Today");
+    const act = move[which];
+    if (!act) throw new HubError(0, which === "later" ? "this move can't be set aside" : "this move only opens");
+    try {
+      return await this.request(act.method, act.path, act.method === "POST" ? {} : undefined, TIMEOUT_MS);
+    } finally {
+      this.lastPoll = 0;
+      void this.poll();
+    }
+  }
+
   snapshot(): HubState {
     return {
       configured: this.configured,
