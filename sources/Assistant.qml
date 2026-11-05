@@ -179,6 +179,11 @@ Item {
     call("chat.send", { text: text, files: files || [] }, function(r, err) { if (done) done(!!r, err) })
   }
 
+  // Answers a devbox agent's dialog through the hub with option `option` (0-based).
+  function hubAnswer(key, option, done) {
+    call("hub.answer", { key: key, option: option }, function(r, err) { if (done) done(!!r, err) })
+  }
+
   // A tk-hub move's action or Later (which: "action" | "later").
   function hubMove(id, which, done) {
     call("hub.move", { id: id, which: which }, function(r, err) { if (done) done(!!r, err) })

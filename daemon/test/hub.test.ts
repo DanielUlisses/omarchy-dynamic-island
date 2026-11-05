@@ -54,7 +54,9 @@ test("the contract's answer parses into herdr-shaped rows, moves and meetings", 
   assert.equal(a.label, "bss");
   assert.equal(a.project, "export-csv");
   assert.equal(a.pane, "");
-  assert.deepEqual(a.dialog?.options, ["ISO", "Locale"]);
+  assert.equal(a.dialog?.options.length, 3);
+  assert.equal(a.answer?.method, "POST");
+  assert.equal(d.agents[1].answer, null);
   assert.ok(a.url.startsWith(BASE + "/#/ticket/"));
   assert.equal(d.moves[0].action?.path, "/api/tasks/42/start");
   assert.equal(d.moves[1].action, null);
@@ -114,7 +116,9 @@ test("the bridge polls with the token, keeps the last list offline, and fills th
   const rows = store.merged();
   assert.equal(rows[0].key, "hub/dev-bss/export-csv#07");
   assert.equal(rows[0].source, "hub");
-  assert.equal(rows[0].dialog?.question, "Which date format?");
+  assert.equal(rows[0].answerable, true);
+  assert.equal(rows[1].answerable, false);
+  assert.equal(rows[0].dialog?.question, "Do you want to run npm test?");
   assert.equal(store.herdrAgents.length, 3);
 
   now += 60_000;
@@ -177,4 +181,28 @@ test("asking the hub posts the question and follows up on the last one", async (
   assert.deepEqual(JSON.parse(String(seen[1].init.body)), { question: "what's blocking pythian?" });
   await assert.rejects(hub.ask("and bss?", 9), /409: the day's questions are used up/);
   assert.deepEqual(JSON.parse(String(seen[2].init.body)), { question: "and bss?", follow_up: 9 });
+});
+
+test("answering a dialog posts the option and the question to the row's answer path", async () => {
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  const hub = new HubBridge(() => undefined, {
+    settings: () => hubSettings({ hubUrl: BASE }),
+    token: () => ({ token: "tok", error: "" }),
+    fetch: fakeFetch([
+      { status: 200, body: fixture() },
+      { status: 200, body: { ok: true } },
+      { status: 200, body: fixture() },
+      { status: 409, body: { detail: "the agent's dialog changed" } },
+    ], seen),
+  });
+  hub.start();
+  hub.stop();
+  for (let i = 0; i < 20 && !hub.snapshot().online; i++) await new Promise((r) => setTimeout(r, 5));
+  await hub.answer("hub/dev-bss/export-csv#07", 0);
+  assert.equal(seen[1].url, BASE + "/api/tickets/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07/answer");
+  assert.deepEqual(JSON.parse(String(seen[1].init.body)), { option: 0, question: "Do you want to run npm test?" });
+  for (let i = 0; i < 20 && seen.length < 3; i++) await new Promise((r) => setTimeout(r, 5));
+  await assert.rejects(hub.answer("hub/dev-bss/export-csv#07", 2), /409: the agent's dialog changed/);
+  await assert.rejects(hub.answer("hub/dev-bss/export-csv#07", 3), /not one of its options/);
+  await assert.rejects(hub.answer("hub/dev-lanvera/itm-9909#03", 0), /no longer waiting/);
 });

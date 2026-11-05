@@ -124,6 +124,13 @@ export interface HubAgent extends HerdrAgent {
   ask: { why: string; title: string } | null;
   dialog: HubDialog | null;
   since: number;
+  /**
+   * Where the hub takes an answer to the dialog (POST {option, question}), or
+   * null when it can't answer this one; the island only calls this path.
+   */
+  answer: HubAction | null;
+  /** The dialog's question exactly as the hub sent it, which it checks an answer against. */
+  answerQuestion: string;
 }
 
 export interface Desktop {
@@ -152,6 +159,8 @@ function action(v: unknown): HubAction | null {
   if ((method !== "POST" && method !== "GET") || !validPath(o.path)) return null;
   return { label: clip(o.label, 24) || (method === "GET" ? "Open" : "Do it"), method, path: o.path };
 }
+
+const postOnly = (a: HubAction | null): HubAction | null => (a && a.method === "POST" ? a : null);
 
 function dialog(v: unknown): HubDialog | null {
   const o = asObject(v);
@@ -193,6 +202,8 @@ export function parseDesktop(raw: unknown, base: string): Desktop {
       ask: ask ? { why: clip(ask.why, 40), title: clip(ask.title, 200) } : null,
       dialog: dialog(a.dialog),
       since: time(a.since),
+      answer: status === "blocked" && asObject(a.dialog) ? postOnly(action(a.answer)) : null,
+      answerQuestion: asString(asObject(a.dialog)?.question).slice(0, 2000),
     });
   }
   const moves: HubMove[] = [];
@@ -387,6 +398,24 @@ export class HubBridge {
     if (!act) throw new HubError(0, which === "later" ? "this move can't be set aside" : "this move only opens");
     try {
       return await this.request(act.method, act.path, act.method === "POST" ? {} : undefined, TIMEOUT_MS);
+    } finally {
+      this.lastPoll = 0;
+      void this.poll();
+    }
+  }
+
+  /**
+   * Answers a blocked devbox agent's dialog with one of its options (Allow,
+   * Deny, ...): POST {option, question} to the path the hub gave on that row.
+   * The hub refuses (409) when the dialog on screen is no longer that one.
+   */
+  async answer(key: string, option: number): Promise<unknown> {
+    const a = this.agents.find((x) => x.key === key);
+    if (!a || a.status !== "blocked" || !a.dialog) throw new HubError(0, "that agent is no longer waiting");
+    if (!a.answer) throw new HubError(0, "the hub can't answer this one: open it in the hub");
+    if (!Number.isInteger(option) || option < 0 || option >= a.dialog.options.length) throw new HubError(0, "not one of its options");
+    try {
+      return await this.request("POST", a.answer.path, { option, question: a.answerQuestion }, TIMEOUT_MS);
     } finally {
       this.lastPoll = 0;
       void this.poll();
