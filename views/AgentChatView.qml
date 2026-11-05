@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import "../IslandModel.js" as Model
 
 // Chat: talk to an agent from the island. Chips on top pick the account (any
 // Claude login, API key or local Ollama), the model, and the workspace:
@@ -25,6 +26,9 @@ Item {
   }
   readonly property string model: chat.model || (account ? account.defaultModel : "")
   readonly property bool secretary: chat.workspace === "secretary"
+  // Hub mode: questions go to tk-hub (POST /api/ask); "#07", a board or a page jumps there.
+  readonly property bool hubMode: chat.workspace === "hub"
+  readonly property bool hubReady: !!assistant.hub && assistant.hub.configured
   readonly property var last: chat.messages.length > 0 ? chat.messages[chat.messages.length - 1] : null
   readonly property bool thinking: chat.busy && (!last || last.role === "user" || !last.text)
   // Messages already on screen: the list is rebuilt on every update, and only
@@ -42,9 +46,14 @@ Item {
     assistant.chatConfigure({ profileId: next.id, model: "" })
   }
 
+  // Island -> Secretary (when there is one) -> Hub (when set up) -> Island.
   function cycleWorkspace() {
-    if (!assistant.secretary.present && !secretary) return
-    assistant.chatConfigure({ workspace: secretary ? "island" : "secretary" })
+    var order = ["island"]
+    if (assistant.secretary.present || secretary) order.push("secretary")
+    if (hubReady || hubMode) order.push("hub")
+    if (order.length < 2) return
+    var i = order.indexOf(chat.workspace)
+    assistant.chatConfigure({ workspace: order[(i + 1) % order.length] })
   }
 
   // Ctrl+A agent (Island / Secretary), Ctrl+M model, Ctrl+S account, Ctrl+N new chat.
@@ -67,6 +76,18 @@ Item {
   function send() {
     var text = input.text.trim()
     if ((!text && island.chatAttachments.length === 0) || chat.busy) return
+    if (hubMode) {
+      if (!text) return
+      var jump = Model.hubJump(text, assistant.agents, assistant.hub.meetings, assistant.hub.url)
+      if (jump && island.agents.openHub(jump.url)) {
+        assistant.chatNote(text, "Opened " + jump.label + " in the hub.")
+      } else {
+        assistant.chatSend(text, [])
+      }
+      input.text = ""
+      island.chatAttachments = []
+      return
+    }
     if (account && !chat.profileId) assistant.chatConfigure({ profileId: account.id, model: model })
     assistant.chatSend(text, island.chatAttachments)
     input.text = ""
@@ -145,10 +166,10 @@ Item {
       PillButton { island: view.island; label: view.modelLabel(view.model); visible: !!view.model; onClicked: view.cycleModel() }
       PillButton {
         island: view.island
-        label: view.secretary ? "󰃖  Secretary" : "󰚩  Island"
-        visible: view.assistant.secretary.present || view.secretary
-        selected: view.secretary
-        onClicked: view.assistant.chatConfigure({ workspace: view.secretary ? "island" : "secretary" })
+        label: view.hubMode ? "󰖟  Hub" : (view.secretary ? "󰃖  Secretary" : "󰚩  Island")
+        visible: view.assistant.secretary.present || view.secretary || view.hubReady || view.hubMode
+        selected: view.secretary || view.hubMode
+        onClicked: view.cycleWorkspace()
       }
     }
 
@@ -221,6 +242,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
         text: !view.assistant.connected ? "The island daemon isn't running."
+          : view.hubMode ? "Ask the hub: what's blocking pythian, what did the agents finish today… or type #07, a board or a page to jump there"
           : view.secretary ? "Ask your secretary: plan the day, what's booked, draft the hours…"
           : "Ask about your agents: why is one blocked, what did it change, start a task in a new pane…"
         textFormat: Text.PlainText
@@ -443,7 +465,7 @@ Item {
           anchors.fill: parent
           verticalAlignment: Text.AlignVCenter
           visible: !input.text
-          text: view.chat.messages.length > 0 ? "Continue…" : (view.secretary ? "Ask your secretary…" : "Ask the island…")
+          text: view.chat.messages.length > 0 ? "Continue…" : (view.hubMode ? "Ask the hub, or #07…" : (view.secretary ? "Ask your secretary…" : "Ask the island…"))
           textFormat: Text.PlainText
           font: input.font
           color: Util.alpha(island.fg, 0.38)

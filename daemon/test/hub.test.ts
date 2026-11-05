@@ -157,3 +157,24 @@ test("a move runs only the path the hub gave for it, then polls again", async ()
   await assert.rejects(hub.runMove("ask:dev-bss/export-csv#07", "action"), /only opens/);
   await assert.rejects(hub.runMove("nope", "later"), /no longer/);
 });
+
+test("asking the hub posts the question and follows up on the last one", async () => {
+  const seen: Array<{ url: string; init: RequestInit }> = [];
+  const hub = new HubBridge(() => undefined, {
+    settings: () => hubSettings({ hubUrl: BASE }),
+    token: () => ({ token: "tok", error: "" }),
+    fetch: fakeFetch([
+      { status: 200, body: fixture() },
+      { status: 200, body: { id: 9, question: "q", answer: "Two tickets.", error: null } },
+      { status: 409, body: { detail: "the day's questions are used up" } },
+    ], seen),
+  });
+  hub.start();
+  hub.stop();
+  for (let i = 0; i < 20 && !hub.snapshot().online; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(await hub.ask("what's blocking pythian?", null), { id: 9, answer: "Two tickets.", error: "" });
+  assert.equal(seen[1].url, BASE + "/api/ask");
+  assert.deepEqual(JSON.parse(String(seen[1].init.body)), { question: "what's blocking pythian?" });
+  await assert.rejects(hub.ask("and bss?", 9), /409: the day's questions are used up/);
+  assert.deepEqual(JSON.parse(String(seen[2].init.body)), { question: "and bss?", follow_up: 9 });
+});

@@ -21,11 +21,13 @@ import os from "node:os";
 import path from "node:path";
 import { canonicalConfigDir, type AccountManager, type Profile } from "../accounts/accountManager.js";
 import type { HerdrBridge } from "../herdr/herdrBridge.js";
+import type { HubBridge } from "../hub/hubBridge.js";
 import { asObject, asString } from "../protocol.js";
 import type { SessionStore } from "../store/sessionStore.js";
 import { jsonSchema, parseArgs, TOOLS, toolByName, type ToolContext } from "./tools.js";
 
-export type Workspace = "island" | "secretary";
+/** Island (its own tools), Secretary (the secretary repo), Hub (questions for tk-hub). */
+export type Workspace = "island" | "secretary" | "hub";
 
 export interface ChatTool { id: string; name: string; summary: string; status: "running" | "done" | "error" | "denied" }
 
@@ -97,8 +99,10 @@ export class AgentChat extends EventEmitter {
   private ollamaHistory: { role: string; content: string; images?: string[]; tool_calls?: unknown[]; tool_name?: string }[] = [];
   /** What the conversation is bound to; changing any of these starts afresh. */
   private boundTo = "";
+  /** Hub mode: the last question asked, so the next one follows it. */
+  private lastAsk: number | null = null;
 
-  constructor(private readonly ctx: ToolContext & { accounts: AccountManager; store: SessionStore; herdr: HerdrBridge }) {
+  constructor(private readonly ctx: ToolContext & { accounts: AccountManager; store: SessionStore; herdr: HerdrBridge; hub?: HubBridge }) {
     super();
     this.workspace = ctx.accounts.chatDefaults().workspace;
   }
@@ -126,6 +130,7 @@ export class AgentChat extends EventEmitter {
     this.sdkSession = "";
     this.apiHistory = [];
     this.ollamaHistory = [];
+    this.lastAsk = null;
     this.error = "";
     this.changed();
   }
@@ -147,12 +152,24 @@ export class AgentChat extends EventEmitter {
   configure(opts: { profileId?: string; model?: string; workspace?: Workspace }): void {
     if (opts.profileId !== undefined) this.profileId = opts.profileId;
     if (opts.model !== undefined) this.model = opts.model;
-    if (opts.workspace !== undefined) this.workspace = opts.workspace === "secretary" ? "secretary" : "island";
+    if (opts.workspace !== undefined) this.workspace = opts.workspace === "secretary" || opts.workspace === "hub" ? opts.workspace : "island";
+    this.changed();
+  }
+
+  /**
+   * Hub mode, a jump the island made itself (#07, a board, a page): the words
+   * and what was opened, so the chat shows it.
+   */
+  note(text: string, answer: string): void {
+    if (this.busy) return;
+    this.messages.push({ id: this.nextId++, role: "user", text: text.slice(0, 300), tools: [], attachments: [] });
+    this.messages.push({ id: this.nextId++, role: "assistant", text: answer.slice(0, 500), tools: [], attachments: [] });
     this.changed();
   }
 
   async send(text: string, files: string[]): Promise<void> {
     if (this.busy) throw new Error("still answering");
+    if (this.workspace === "hub") return this.viaHub(text);
     const profile = this.profile();
     if (!profile) throw new Error("no account configured (accounts.json)");
     this.profileId = profile.id;
@@ -182,6 +199,34 @@ export class AgentChat extends EventEmitter {
       this.busy = false;
       this.abort = null;
       if (!reply.text && reply.tools.length === 0) this.messages = this.messages.filter((m) => m !== reply);
+      this.changed();
+    }
+  }
+
+  // ---- Hub mode: POST /api/ask on tk-hub (read-only answers from the hub's data)
+
+  private async viaHub(text: string): Promise<void> {
+    if (this.boundTo !== "hub") { this.lastAsk = null; this.boundTo = "hub"; }
+    this.messages.push({ id: this.nextId++, role: "user", text, tools: [], attachments: [] });
+    this.busy = true;
+    this.error = "";
+    this.abort = new AbortController();
+    this.changed();
+    try {
+      const hub = this.ctx.hub;
+      if (!hub?.configured) throw new Error("the hub is not set up (hubUrl in the island's settings)");
+      const r = await hub.ask(text, this.lastAsk, this.abort.signal);
+      if (r.id !== null) this.lastAsk = r.id;
+      if (!r.answer) throw new Error(r.error || "the hub gave no answer");
+      this.messages.push({ id: this.nextId++, role: "assistant", text: r.answer, tools: [], attachments: [] });
+    } catch (e) {
+      if (!this.abort?.signal.aborted) {
+        this.error = String((e as Error).message ?? e);
+        this.messages.push({ id: this.nextId++, role: "error", text: this.error, tools: [], attachments: [] });
+      }
+    } finally {
+      this.busy = false;
+      this.abort = null;
       this.changed();
     }
   }

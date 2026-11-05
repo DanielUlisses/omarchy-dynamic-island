@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   const herdr = new HerdrBridge((agents) => store.setHerdr(agents), cfg.herdrIntervalMs);
   const hub = new HubBridge(() => store.setHub(hub.agents), { settings: () => hubSettings(islandSettings()) });
   const accounts = new AccountManager();
-  const chat = new AgentChat({ store, herdr, accounts });
+  const chat = new AgentChat({ store, herdr, hub, accounts });
   const server = new IslandServer(socketPath(), { store, herdr, hub, accounts, chat, reportToHerdr: cfg.reportToHerdr });
 
   if (!(await server.listen())) {

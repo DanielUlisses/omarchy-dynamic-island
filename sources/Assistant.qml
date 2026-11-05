@@ -172,6 +172,7 @@ Item {
   function chatConfigure(opts) { call("chat.configure", opts) }
   function chatDefaults() { call("chat.defaults", {}) }
   function chatStop() { call("chat.stop", {}) }
+  function chatNote(text, answer) { call("chat.note", { text: text, answer: answer }) }
   function chatReset() { call("chat.reset", {}) }
 
   function chatSend(text, files, done) {

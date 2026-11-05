@@ -209,7 +209,7 @@ export class IslandServer {
         chat.configure({
           profileId: typeof p.profileId === "string" ? p.profileId : undefined,
           model: typeof p.model === "string" ? p.model : undefined,
-          workspace: p.workspace === "secretary" || p.workspace === "island" ? p.workspace : undefined,
+          workspace: p.workspace === "secretary" || p.workspace === "island" || p.workspace === "hub" ? p.workspace : undefined,
         });
         return {};
       case "chat.send": {
@@ -220,6 +220,7 @@ export class IslandServer {
         void chat.send(text || "(see the attached files)", files).catch(() => undefined);
         return { accepted: true };
       }
+      case "chat.note": chat.note(asString(p.text), asString(p.answer)); return {};
       case "chat.stop": chat.stop(); return {};
       case "chat.reset": chat.reset(); return {};
       case "chat.capture": return { path: await captureRegion() };

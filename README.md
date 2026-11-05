@@ -337,6 +337,14 @@ what it is and why, its action (Start, Review, ...), **Later** to set it
 aside, and **Open** for its page in the hub. The action and Later call only
 the routes the hub gave for that move.
 
+Island Chat gets a **Hub** mode beside Island and Secretary (the chip, or
+**Ctrl+A** to cycle): a question goes to the hub's `POST /api/ask` and its
+answer shows in the chat, each one following the last until **New**. `#07`
+(or `board#07`), a board's name or a hub page's name (Today, Live board,
+Projects, ...) opens that page in the hub instead. A project name the hub's
+meetings mention opens Projects, since the island doesn't know the hub's
+project ids.
+
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON
 omarchy-shell dynamic-island openAgents      # open the list

@@ -44,3 +44,24 @@ test("an opened next move shows its card", () => {
   assert.equal(M.viewFor({ userExpanded: false, moveOpen: true, hovered: false }), "idle");
   assert.equal(M.sizeFor("move-expanded", {}, null).w, 424);
 });
+
+test("hub mode: #07, a board or a page jumps; anything else is a question", () => {
+  const agents = [
+    { source: "hub", nn: "07", project: "export-csv", status: "working", title: "CSV", url: BASE + "/#/ticket/a/07" },
+    { source: "hub", nn: "07", project: "receipts", status: "blocked", title: "Receipts", url: BASE + "/#/ticket/b/07" },
+    { source: "hub", nn: "03", project: "receipts", status: "done", title: "Fmt", url: BASE + "/#/ticket/b/03" },
+    { nn: "", project: "local", status: "working", url: "" },
+  ];
+  const meetings = [{ project: "itm-9909" }];
+  const url = (t: string) => M.hubJump(t, agents, meetings, BASE)?.url ?? null;
+  assert.equal(url("#07"), BASE + "/#/ticket/b/07");
+  assert.equal(url("#7"), BASE + "/#/ticket/b/07");
+  assert.equal(url("export-csv#07"), BASE + "/#/ticket/a/07");
+  assert.equal(url("#99"), null);
+  assert.equal(url("receipts"), BASE + "/#/ticket/b/07");
+  assert.equal(url("open Today"), BASE + "/#/today");
+  assert.equal(url("live board"), BASE + "/#/live");
+  assert.equal(url("itm-9909"), BASE + "/#/projects");
+  assert.equal(url("what's blocking pythian?"), null);
+  assert.equal(M.hubJump("#07", agents, meetings, ""), null);
+});

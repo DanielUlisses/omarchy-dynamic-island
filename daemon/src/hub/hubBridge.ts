@@ -20,6 +20,7 @@ import { asObject, asString, configDir, isNum } from "../protocol.js";
 
 export const DEFAULT_INTERVAL_S = 10;
 const TIMEOUT_MS = 8000;
+const ASK_TIMEOUT_MS = 90_000;
 
 export interface HubSettings {
   /** "" when the hub is not set up. */
@@ -320,7 +321,7 @@ export class HubBridge {
     return t.token;
   }
 
-  private async request(method: "GET" | "POST", route: string, body: unknown, timeoutMs: number): Promise<unknown> {
+  private async request(method: "GET" | "POST", route: string, body: unknown, timeoutMs: number, abort?: AbortSignal): Promise<unknown> {
     if (!this.base) throw new HubError(0, "the hub is not set up (hubUrl)");
     if (!validPath(route)) throw new HubError(0, "not a hub route");
     const token = this.auth();
@@ -335,7 +336,7 @@ export class HubBridge {
         },
         body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
         redirect: "error",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: abort ? AbortSignal.any([abort, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       throw new HubError(0, `hub unreachable: ${(e as Error).message || e}`);
@@ -390,6 +391,14 @@ export class HubBridge {
       this.lastPoll = 0;
       void this.poll();
     }
+  }
+
+  /** Asks the hub (POST /api/ask); `followUp` is the question it follows. Up to a minute and a half. */
+  async ask(question: string, followUp: number | null, abort?: AbortSignal): Promise<{ id: number | null; answer: string; error: string }> {
+    const body: Record<string, unknown> = { question: question.slice(0, 2000) };
+    if (followUp !== null) body.follow_up = followUp;
+    const r = asObject(await this.request("POST", "/api/ask", body, ASK_TIMEOUT_MS, abort)) ?? {};
+    return { id: isNum(r.id) ? r.id : null, answer: asString(r.answer), error: asString(r.error) };
   }
 
   snapshot(): HubState {

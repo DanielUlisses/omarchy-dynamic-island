@@ -858,6 +858,48 @@ function hubDialogText(dialog) {
   return lines.join("\n")
 }
 
+// tk-hub's pages, as its navbar names them (hub-web's command.ts PAGES).
+var hubPages = [
+  { page: "today", names: ["today", "home"] }, { page: "calendar", names: ["calendar"] },
+  { page: "timeline", names: ["timeline"] }, { page: "projects", names: ["projects"] },
+  { page: "insights", names: ["insights"] }, { page: "sessions", names: ["sessions"] },
+  { page: "inbox", names: ["inbox"] }, { page: "cards", names: ["cards"] },
+  { page: "live", names: ["live", "live board", "board", "boards"] }, { page: "devboxes", names: ["devboxes", "devbox"] },
+  { page: "finance", names: ["finance"] }, { page: "ask", names: ["ask"] }
+]
+
+// Hub mode in Island Chat: the words as a jump, when they name one. "#07"
+// (or "export-csv#07") is that ticket's page, a board's name the page of its
+// most urgent agent, a page's name ("today", "live board") that page, and a
+// project the hub's meetings name its Projects page. -> { url, label } or null,
+// and then the words go to the hub as a question.
+function hubJump(text, agents, meetings, hubUrl) {
+  var base = String(hubUrl || "").replace(/\/+$/, "")
+  if (!base) return null
+  var t = String(text || "").trim().toLowerCase().replace(/^(go to|open|jump to|show)\s+/, "").replace(/[.!]+$/, "").trim()
+  if (!t || t.length > 60) return null
+  var hub = (agents || []).filter(function(a) { return a.source === "hub" && a.url })
+  var urgent = function(list) {
+    var order = { blocked: 0, done: 1, working: 2, idle: 3 }
+    return list.slice().sort(function(a, b) { return (order[a.status] === undefined ? 4 : order[a.status]) - (order[b.status] === undefined ? 4 : order[b.status]) })
+  }
+  var m = /^([a-z0-9][a-z0-9._-]*)?\s*#\s*(\d{1,3})$/.exec(t)
+  if (m) {
+    var nn = m[2].length < 2 ? "0" + m[2] : m[2]
+    var hits = urgent(hub.filter(function(a) {
+      return (a.nn === nn || a.nn === m[2]) && (!m[1] || String(a.project || a.board || "").toLowerCase() === m[1])
+    }))
+    return hits.length > 0 ? { url: hits[0].url, label: "#" + hits[0].nn + " " + (hits[0].title || "") } : null
+  }
+  for (var i = 0; i < hubPages.length; i++)
+    if (hubPages[i].names.indexOf(t) !== -1) return { url: base + "/#/" + hubPages[i].page, label: hubPages[i].page }
+  var onBoard = urgent(hub.filter(function(a) { return String(a.project || "").toLowerCase() === t }))
+  if (onBoard.length > 0) return { url: onBoard[0].url, label: onBoard[0].project + " #" + onBoard[0].nn }
+  var projects = (meetings || []).map(function(x) { return String(x.project || "").toLowerCase() })
+  if (projects.indexOf(t) !== -1) return { url: base + "/#/projects", label: "projects" }
+  return null
+}
+
 // A hub page the island may open: only on the configured hub.
 function hubLink(url, hubUrl) {
   var u = String(url || ""), base = String(hubUrl || "").replace(/\/+$/, "")
