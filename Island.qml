@@ -904,6 +904,15 @@ Item {
   property bool calendarAdding: false
   readonly property bool calendarTyping: calendarAdding && view === "calendar-expanded"
 
+  // Home opened on one agent (a hub agent's dialog to answer).
+  property string homeKey: ""
+  function openHomeOn(key) {
+    hud = null
+    homeKey = ""
+    homeKey = key
+    openWorkspace("agents")
+  }
+
   // ---- tk-hub's meetings: the ◉ capture mark and Capture to hub
   function hubMeetingFor(ev) { return Model.hubMeetingFor(ev, assistantSource.hub.meetings) }
 
@@ -1398,6 +1407,9 @@ Item {
     if (!userExpanded && view === "hud-toast" && hud && hud.capture) { hud = null; captureToHub(); return }
     // A toast about one agent: clicking it lands on that agent.
     if (!userExpanded && view === "hud-toast" && hud && hud.agentKey) {
+      // A devbox agent the island can answer: Home, on it, with its options.
+      var row = assistantSource.rowFor(hud.agentKey)
+      if (row && row.answerable) { openHomeOn(row.key); return }
       var agent = herdrSource.find(hud.agentKey)
       if (agent) { openAgent(agent); return }
     }

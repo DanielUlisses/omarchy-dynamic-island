@@ -78,10 +78,35 @@ Item {
     if (ctrl && e.key === Qt.Key_H) { if (localRows.length > 0 && herdrRows.length > 0) toggleHerdr() }
     else if (ctrl && e.key === Qt.Key_A) { if (e.modifiers & Qt.ShiftModifier) page(-1); else poke() }
     else if (ctrl && e.key === Qt.Key_O) openSelected()
+    else if (!ctrl && selected && selected.answerable && e.key >= Qt.Key_1 && e.key <= Qt.Key_4
+             && e.key - Qt.Key_1 < selected.dialog.options.length) answer(selected, e.key - Qt.Key_1)
     else if (e.key === Qt.Key_Left) page(-1)
     else if (e.key === Qt.Key_Right) page(1)
     else return
     e.accepted = true
+  }
+
+  // Opened on one agent (Island.openHomeOn): show its list, select it.
+  Connections {
+    target: view.island
+    function onHomeKeyChanged() {
+      var k = view.island.homeKey
+      if (!k) return
+      for (var i = 0; i < view.herdrRows.length; i++)
+        if (view.herdrRows[i].key === k) { view.showHerdr = true; view.selectedKey = k; return }
+    }
+  }
+
+  // Allow / Deny / any option of a devbox agent's dialog, sent through the hub.
+  property bool answering: false
+  function answer(r, option) {
+    if (!r || answering) return
+    answering = true
+    assistant.hubAnswer(r.key, option, function(ok, err) {
+      view.answering = false
+      island.showHud({ key: "answer", layout: "label", label: ok ? "Sent: " + r.dialog.options[option] : (err || "The hub said no"),
+                       icon: ok ? "󰄬" : "󰀦", valueText: "", color: ok ? island.greenColor : island.orangeColor, duration: 2400 })
+    })
   }
 
   function select(r) {
@@ -402,9 +427,10 @@ Item {
         width: parent.width - island.s(4)
         wrapMode: Text.WordWrap
         elide: Text.ElideRight
-        maximumLineCount: view.selected && view.selected.dialog ? 8 : 4
+        maximumLineCount: view.selected && view.selected.dialog ? (view.selected.answerable ? 3 : 8) : 4
         // A hub agent at a dialog: its question and options (answer it in the hub).
-        text: !view.selected ? "" : (view.selected.dialog ? Model.hubDialogText(view.selected.dialog)
+        text: !view.selected ? "" : (view.selected.dialog
+            ? (view.selected.answerable ? view.selected.dialog.question || view.selected.dialog.text : Model.hubDialogText(view.selected.dialog))
           : (view.selected.lastPrompt ? "“" + view.selected.lastPrompt + "”"
           : (view.selected.hookSession ? "Waiting for a prompt"
           : (view.selected.ask && view.selected.ask.title ? view.selected.ask.title : Model.agentStateText(view.selected.status)))))
@@ -414,14 +440,30 @@ Item {
         color: island.fgDim
       }
 
-      // No Allow / Deny from the island for a devbox agent: the hub answers it.
-      PillButton {
+      // A devbox agent at a dialog: its options (Allow, Deny, ...) answer it
+      // through the hub; Open in hub for the rest.
+      Column {
         visible: !!view.selected && view.selected.source === "hub" && stateText.visible
         x: island.s(4)
         y: stateText.y + stateText.height + island.s(8)
-        island: view.island
-        label: "󰖟 Open in hub"
-        onClicked: view.openSelected()
+        width: parent.width - island.s(4)
+        spacing: island.s(5)
+        Repeater {
+          model: view.selected && view.selected.answerable ? view.selected.dialog.options.slice(0, 4) : []
+          PillButton {
+            required property var modelData
+            required property int index
+            island: view.island
+            filled: index === 0
+            label: view.answering ? "…" : (index + 1) + "  " + (modelData.length > 22 ? modelData.slice(0, 21) + "…" : modelData)
+            onClicked: view.answer(view.selected, index)
+          }
+        }
+        PillButton {
+          island: view.island
+          label: "󰖟 Open in hub"
+          onClicked: view.openSelected()
+        }
       }
     }
 

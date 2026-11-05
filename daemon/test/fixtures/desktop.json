@@ -1,62 +1,125 @@
 {
   "at": "2026-11-05T13:42:10Z",
   "hub": "https://tk-hub.example.ts.net",
-  "counts": { "needs": 1, "review": 1, "working": 4 },
+  "counts": {
+    "needs": 1,
+    "review": 1,
+    "working": 4
+  },
   "agents": [
     {
       "key": "dev-bss/export-csv#07",
-      "devbox": "dev-bss", "board": "export-csv", "board_key": "dev-bss:/home/daniel/app:export-csv", "nn": "07",
-      "title": "CSV export button", "client": "bss",
+      "devbox": "dev-bss",
+      "board": "export-csv",
+      "board_key": "dev-bss:/home/daniel/app:export-csv",
+      "nn": "07",
+      "title": "CSV export button",
+      "client": "bss",
       "status": "blocked",
       "col": "needs",
-      "ask": { "why": "dialog", "title": "Answer #07's agent" },
-      "dialog": { "question": "Which date format?", "text": "The export needs a date format.", "options": ["ISO", "Locale"] },
+      "ask": {
+        "why": "dialog",
+        "title": "Answer #07's agent"
+      },
+      "dialog": {
+        "question": "Do you want to run npm test?",
+        "text": "Bash command\n  npm test",
+        "options": [
+          "Yes",
+          "Yes, and don't ask again for npm test",
+          "No, and tell Claude what to do differently"
+        ]
+      },
       "since": "2026-11-05T13:30:00Z",
-      "url": "https://tk-hub.example.ts.net/#/ticket/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07"
+      "url": "https://tk-hub.example.ts.net/#/ticket/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07",
+      "answer": {
+        "method": "POST",
+        "path": "/api/tickets/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07/answer"
+      }
     },
     {
       "key": "dev-lanvera/itm-9909#03",
-      "devbox": "dev-lanvera", "board": "itm-9909", "board_key": "dev-lanvera:/home/daniel/infra:itm-9909", "nn": "03",
-      "title": "Policy exception module", "client": "lanvera",
+      "devbox": "dev-lanvera",
+      "board": "itm-9909",
+      "board_key": "dev-lanvera:/home/daniel/infra:itm-9909",
+      "nn": "03",
+      "title": "Policy exception module",
+      "client": "lanvera",
       "status": "done",
       "col": "review",
       "ask": null,
       "dialog": null,
       "since": "2026-11-05T13:10:00Z",
-      "url": "https://tk-hub.example.ts.net/#/review/dev-lanvera%3A%2Fhome%2Fdaniel%2Finfra%3Aitm-9909/03"
+      "url": "https://tk-hub.example.ts.net/#/review/dev-lanvera%3A%2Fhome%2Fdaniel%2Finfra%3Aitm-9909/03",
+      "answer": null
     },
     {
       "key": "dev-pythian/receipts#02",
-      "devbox": "dev-pythian", "board": "receipts", "board_key": "dev-pythian:/home/daniel/billing:receipts", "nn": "02",
-      "title": "Rewrite the receipt formatter", "client": "pythian",
+      "devbox": "dev-pythian",
+      "board": "receipts",
+      "board_key": "dev-pythian:/home/daniel/billing:receipts",
+      "nn": "02",
+      "title": "Rewrite the receipt formatter",
+      "client": "pythian",
       "status": "working",
       "col": "working",
       "ask": null,
       "dialog": null,
       "since": "2026-11-05T12:55:00Z",
-      "url": "https://tk-hub.example.ts.net/#/sessions/dev-pythian%3A%2Fhome%2Fdaniel%2Fbilling%3Areceipts/02"
+      "url": "https://tk-hub.example.ts.net/#/sessions/dev-pythian%3A%2Fhome%2Fdaniel%2Fbilling%3Areceipts/02",
+      "answer": null
     }
   ],
   "moves": [
     {
-      "id": "task:42", "kind": "task", "rank": "frees", "title": "Plan the week",
-      "client": "daniel", "detail": "frees 3 tickets",
-      "action": { "label": "Start", "method": "POST", "path": "/api/tasks/42/start" },
-      "later": { "label": "Later", "method": "POST", "path": "/api/tasks/42/later" },
+      "id": "task:42",
+      "kind": "task",
+      "rank": "frees",
+      "title": "Plan the week",
+      "client": "daniel",
+      "detail": "frees 3 tickets",
+      "action": {
+        "label": "Start",
+        "method": "POST",
+        "path": "/api/tasks/42/start"
+      },
+      "later": {
+        "label": "Later",
+        "method": "POST",
+        "path": "/api/tasks/42/later"
+      },
       "url": "https://tk-hub.example.ts.net/#/today"
     },
     {
-      "id": "ask:dev-bss/export-csv#07", "kind": "ask", "rank": "now", "title": "Answer #07's agent",
-      "client": "bss", "detail": "Which date format?",
+      "id": "ask:dev-bss/export-csv#07",
+      "kind": "ask",
+      "rank": "now",
+      "title": "Answer #07's agent",
+      "client": "bss",
+      "detail": "Which date format?",
       "action": null,
       "later": null,
       "url": "https://tk-hub.example.ts.net/#/sessions/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07"
     }
   ],
   "meetings": [
-    { "id": 123, "uid": "abc123@google.com", "start_at": "2026-11-05T15:00:00Z", "end_at": "2026-11-05T15:30:00Z",
-      "title": "BSS weekly", "capture": true, "project": "export-csv" },
-    { "id": 124, "uid": "def456@google.com", "start_at": "2026-11-06T12:00:00Z", "end_at": "2026-11-06T12:30:00Z",
-      "title": "1:1", "capture": false, "project": "" }
+    {
+      "id": 123,
+      "uid": "abc123@google.com",
+      "start_at": "2026-11-05T15:00:00Z",
+      "end_at": "2026-11-05T15:30:00Z",
+      "title": "BSS weekly",
+      "capture": true,
+      "project": "export-csv"
+    },
+    {
+      "id": 124,
+      "uid": "def456@google.com",
+      "start_at": "2026-11-06T12:00:00Z",
+      "end_at": "2026-11-06T12:30:00Z",
+      "title": "1:1",
+      "capture": false,
+      "project": ""
+    }
   ]
 }

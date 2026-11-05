@@ -156,6 +156,7 @@ Item {
       var opts = a.dialog && a.dialog.options ? a.dialog.options.join(" / ") : ""
       body = kind === "blocked"
         ? (q ? q + (opts ? " · " + opts : "") : (a.ask && a.ask.title ? a.ask.title : "Needs you")) + " · " + Model.agentPlace(a)
+          + (a.answer ? " · click to answer" : "")
         : (a.col === "pr" ? "PR ready" : (a.col === "human" ? "Your turn" : "Ready for review")) + " · " + Model.agentPlace(a)
     } else if (shown.length === 1) {
       title = Model.agentTitle(a)

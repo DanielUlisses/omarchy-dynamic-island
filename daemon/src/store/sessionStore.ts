@@ -393,6 +393,8 @@ export interface MergedAgent {
   client: string;
   ask: HubAgent["ask"];
   dialog: HubAgent["dialog"];
+  /** The hub can take an answer to its dialog from the island. */
+  answerable: boolean;
 }
 
 function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked: Set<string>): MergedAgent {
@@ -416,5 +418,6 @@ function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked:
     steps: s?.steps ?? [], terminal: s?.terminal ?? null,
     source: isHub(h) ? "hub" : "", url: isHub(h) ? h.url : "", nn: isHub(h) ? h.nn : "", client: isHub(h) ? h.client : "",
     ask: isHub(h) ? h.ask : null, dialog: isHub(h) ? h.dialog : null,
+    answerable: isHub(h) && h.status === "blocked" && !!h.dialog && !!h.answer,
   };
 }

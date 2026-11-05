@@ -187,6 +187,10 @@ export class IslandServer {
         await this.s.hub.poll();
         return {};
       case "hub.refresh": await this.s.hub.poll(); return {};
+      case "hub.answer": {
+        const option = typeof p.option === "number" ? p.option : -1;
+        return { result: await this.s.hub.answer(asString(p.key), option) };
+      }
       case "hub.move": {
         const which = p.which === "later" ? "later" : p.which === "action" ? "action" : null;
         if (!which) throw new RpcError(RPC_INVALID_PARAMS, "which must be action or later");

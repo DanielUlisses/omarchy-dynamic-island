@@ -328,8 +328,15 @@ options when it is at a dialog, and when it reaches a hub milestone (review,
 your gate, a PR); going quiet between turns is not news. Clicking the toast,
 a hub row's **Hub** button or **Open in hub** in Home opens that ticket's page
 in the hub's Chrome app window (`omarchy-launch-webapp`, as SUPER+SHIFT+H
-does). The island doesn't answer a devbox agent's dialog yet: do that in the
-hub.
+does).
+
+When the hub can answer a devbox agent's dialog (it gives the row an
+`answer` route), the toast says "click to answer" and opens Home on that
+agent: its question with one button per option (Allow, Always, Deny, or the
+question's own choices; keys **1**-**4** too). The island sends the option's
+index and the question it showed; the hub refuses if the dialog on screen has
+changed since. A dialog the hub can't answer shows its options as text, with
+**Open in hub**.
 
 The resting ticker also flips to the hub's next move (the first of Today's
 "Your moves"). Click the island while it shows it to open the move's card:
