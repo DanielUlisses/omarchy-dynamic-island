@@ -900,6 +900,23 @@ function hubJump(text, agents, meetings, hubUrl) {
   return null
 }
 
+// The hub's meeting for a calendar event: the same ICS UID and the same start
+// (a recurring series shares its UID, so the start picks the instance).
+function hubMeetingFor(ev, meetings) {
+  if (!ev || !ev.uid) return null
+  var list = meetings || []
+  for (var i = 0; i < list.length; i++)
+    if (list[i].uid === ev.uid && Math.abs(Number(list[i].start) - Number(ev.start)) < 60000) return list[i]
+  return null
+}
+
+// What Island Chat's Secretary is asked to run after a captured call.
+function captureRequest(meeting, transcript) {
+  return "Run the call-capture skill for tk-hub meeting " + meeting.id
+    + (meeting.title ? " (\"" + meeting.title + "\")" : "")
+    + ". The transcript is at " + transcript + "."
+}
+
 // A hub page the island may open: only on the configured hub.
 function hubLink(url, hubUrl) {
   var u = String(url || ""), base = String(hubUrl || "").replace(/\/+$/, "")

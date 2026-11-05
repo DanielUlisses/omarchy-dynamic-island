@@ -345,6 +345,16 @@ Projects, ...) opens that page in the hub instead. A project name the hub's
 meetings mention opens Projects, since the island doesn't know the hub's
 project ids.
 
+The calendar stays on the island's own iCalendar links; the hub's meetings
+are matched to them by UID and start. A call the hub wants captured shows a
+red ◉ beside the next-meeting pill. Capture runs after the call (voxtype's
+transcript is only written once it ends): when the recording of such a call
+stops and the transcript is saved, a **Capture to hub** toast appears (click
+it, or **◉ Capture to hub** in the opened resting island, or
+`omarchy-shell dynamic-island captureToHub`). It opens Island Chat in
+Secretary mode and asks the secretary to run its `call-capture` skill with
+the hub meeting's id and the transcript's path.
+
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON
 omarchy-shell dynamic-island openAgents      # open the list

@@ -65,3 +65,17 @@ test("hub mode: #07, a board or a page jumps; anything else is a question", () =
   assert.equal(url("what's blocking pythian?"), null);
   assert.equal(M.hubJump("#07", agents, meetings, ""), null);
 });
+
+test("a calendar event matches the hub's meeting by UID and start", () => {
+  const start = Date.parse("2026-11-05T15:00:00Z");
+  const meetings = [
+    { id: 123, uid: "abc@google.com", start, capture: true, title: "BSS weekly" },
+    { id: 130, uid: "abc@google.com", start: start + 7 * 86400000, capture: false },
+  ];
+  assert.equal(M.hubMeetingFor({ uid: "abc@google.com", start }, meetings)?.id, 123);
+  assert.equal(M.hubMeetingFor({ uid: "abc@google.com", start: start + 7 * 86400000 }, meetings)?.id, 130);
+  assert.equal(M.hubMeetingFor({ uid: "abc@google.com", start: start + 3600000 }, meetings), null);
+  assert.equal(M.hubMeetingFor({ uid: "", start }, meetings), null);
+  assert.equal(M.captureRequest(meetings[0], "/m/x.transcript.md"),
+    'Run the call-capture skill for tk-hub meeting 123 ("BSS weekly"). The transcript is at /m/x.transcript.md.');
+});

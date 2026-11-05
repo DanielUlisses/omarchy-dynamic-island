@@ -31,6 +31,12 @@ Item {
   readonly property string dir: String(island ? island.setting("meetingsDir", "") : "")
     || ((Quickshell.env("XDG_DATA_HOME") || Quickshell.env("HOME") + "/.local/share") + "/omarchy-dynamic-island/meetings")
 
+  // The tk-hub meeting this recording is of (matched by ICS UID + start), when
+  // the hub wants it captured; after the transcript is saved the island offers
+  // Capture to hub.
+  property var hubMeeting: null
+  signal captureReady(var meeting, string transcript)
+
   function start(name) {
     if (!wanted || busy) return
     title = name || "Meeting"
@@ -38,6 +44,9 @@ Item {
     startedAt = Date.now()
     heardCall = false
     endsAt = slotEnd(title)
+    var ev = slotEvent(title)
+    var hm = ev && island ? island.hubMeetingFor(ev) : null
+    hubMeeting = hm && hm.capture ? hm : null
     Quickshell.execDetached(["voxtype", "meeting", "start", "--title", title])
     settle.restart()
   }
@@ -65,14 +74,20 @@ Item {
   onCallOnChanged: if (callOn && active) heardCall = true
   onActiveChanged: if (active && callOn) heardCall = true
 
-  // When the calendar event called `name` that is on (or about to be) ends.
-  function slotEnd(name) {
+  // The calendar event called `name` that is on (or about to be).
+  function slotEvent(name) {
     var list = island && island.calendar ? island.calendar.events : []
     var now = Date.now()
     for (var i = 0; i < list.length; i++)
       if (!list[i].allDay && list[i].title === name && list[i].start - now < 15 * 60000 && list[i].end > now)
-        return list[i].end
-    return 0
+        return list[i]
+    return null
+  }
+
+  // When that event ends.
+  function slotEnd(name) {
+    var ev = slotEvent(name)
+    return ev ? ev.end : 0
   }
 
   Timer {
@@ -122,6 +137,8 @@ Item {
           label: ok ? "Transcript saved" : "Transcript failed",
           color: ok ? island.greenColor : island.urgentColor, duration: 2600 })
         if (ok) { transcription.lastBase = base; transcription.saved() }
+        if (ok && transcription.hubMeeting) transcription.captureReady(transcription.hubMeeting, base + ".transcript.md")
+        transcription.hubMeeting = null
       }
     }
   }
