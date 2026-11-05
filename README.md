@@ -318,6 +318,14 @@ then `"hubUrl": "https://<your hub>"` in the island's shell.json entry (and
 answer, the island keeps the last list and Home shows a grey dot and
 "hub offline · N min".
 
+A hub agent toasts when it needs you, with the agent's question and its
+options when it is at a dialog, and when it reaches a hub milestone (review,
+your gate, a PR); going quiet between turns is not news. Clicking the toast,
+a hub row's **Hub** button or **Open in hub** in Home opens that ticket's page
+in the hub's Chrome app window (`omarchy-launch-webapp`, as SUPER+SHIFT+H
+does). The island doesn't answer a devbox agent's dialog yet: do that in the
+hub.
+
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON
 omarchy-shell dynamic-island openAgents      # open the list

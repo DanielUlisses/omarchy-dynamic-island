@@ -149,7 +149,15 @@ Item {
     var a = shown[0].agent
     var color = kind === "blocked" ? island.urgentColor : island.greenColor
     var title, body
-    if (shown.length === 1) {
+    if (shown.length === 1 && a.source === "hub") {
+      // #07 CSV export button / the agent's question (or the hub's milestone).
+      title = (a.nn ? "#" + a.nn + " " : "") + Model.agentTitle(a)
+      var q = a.dialog ? (a.dialog.question || "") : ""
+      var opts = a.dialog && a.dialog.options ? a.dialog.options.join(" / ") : ""
+      body = kind === "blocked"
+        ? (q ? q + (opts ? " · " + opts : "") : (a.ask && a.ask.title ? a.ask.title : "Needs you")) + " · " + Model.agentPlace(a)
+        : (a.col === "pr" ? "PR ready" : (a.col === "human" ? "Your turn" : "Ready for review")) + " · " + Model.agentPlace(a)
+    } else if (shown.length === 1) {
       title = Model.agentTitle(a)
       var place = title === Model.agentPlace(a) ? a.agent : Model.agentPlace(a)
       body = (kind === "blocked" ? "Needs you" : "Finished") + (place ? " · " + place : "")
@@ -220,8 +228,20 @@ Item {
     "else exit 1; fi; " +
     "\"${launch[@]}\" >/dev/null 2>&1 &"
 
+  // A hub agent opens its ticket page in the hub's Chrome app window, the
+  // same launch as SUPER + SHIFT + H (omarchy-launch-webapp).
+  function openHub(url) {
+    var link = Model.hubLink(url, hubUrl)
+    if (!link) return false
+    Quickshell.execDetached(["sh", "-c",
+      "command -v omarchy-launch-webapp >/dev/null 2>&1 && exec setsid omarchy-launch-webapp \"$1\"; exec setsid xdg-open \"$1\"",
+      "sh", link])
+    return true
+  }
+
   function open(a) {
     if (!a) return
+    if (a.source === "hub") { if (!demo) openHub(a.url); return }
     if (!demo) {
       Quickshell.execDetached(["bash", "-c", openScript, "bash", a.machine, a.pane, a.target || "", a.session || "default"])
       soon.restart()

@@ -820,6 +820,9 @@ function herdrChanges(prev, agents, primed) {
     var was = prev[a.key]
     if (was === a.status) continue
     if (a.status === "blocked") out.push({ agent: a, kind: "blocked" })
+    // A hub agent is done only at a hub milestone (review, the human gate, a
+    // PR): the hub says `done`. Going quiet between turns is not news.
+    else if (a.source === "hub") { if (a.status === "done") out.push({ agent: a, kind: "done" }) }
     // Finished: `done` if nobody was looking, `idle` if its pane was in view.
     else if (was === "working" && (a.status === "done" || a.status === "idle")) out.push({ agent: a, kind: "done" })
     else if (was === "blocked" && a.status === "done") out.push({ agent: a, kind: "done" })
@@ -840,6 +843,24 @@ function agentTitle(a) {
       || /^(claude( code)?|codex|opencode|gemini( cli)?|amp|pi|cursor( agent)?)$/i.test(t))
     return agentPlace(a) || t || a.agent || a.pane
   return t
+}
+
+// A hub agent's dialog in a few lines: the question, then its options.
+function hubDialogText(dialog) {
+  if (!dialog) return ""
+  var lines = []
+  if (dialog.question) lines.push(dialog.question)
+  else if (dialog.text) lines.push(String(dialog.text).split("\n").slice(-3).join(" ").trim())
+  var options = dialog.options || []
+  for (var i = 0; i < options.length; i++) lines.push((i + 1) + ". " + options[i])
+  return lines.join("\n")
+}
+
+// A hub page the island may open: only on the configured hub.
+function hubLink(url, hubUrl) {
+  var u = String(url || ""), base = String(hubUrl || "").replace(/\/+$/, "")
+  if (!base || !/^https?:\/\//.test(base)) return ""
+  return u === base || u.indexOf(base + "/") === 0 ? u : ""
 }
 
 function agentStateText(status) {

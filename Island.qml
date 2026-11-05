@@ -825,7 +825,7 @@ Item {
     if (ap && ap.herdrPane && openAgentByKey("local/" + ap.herdrPane)) return "ok"
     var rows = assistantSource.agents
     for (var i = 0; i < rows.length; i++)
-      if (rows[i].pane && (rows[i].status === "blocked" || rows[i].status === "done" || rows[i].status === "working")
+      if ((rows[i].pane || rows[i].source === "hub") && (rows[i].status === "blocked" || rows[i].status === "done" || rows[i].status === "working")
           && openAgentByKey(rows[i].key)) return rows[i].key
     if (herdrSource.first) { openAgent(herdrSource.first); return herdrSource.first.key }
     return "no agent"
