@@ -33,6 +33,7 @@ test("routes the island may call stay under /api/", () => {
   assert.ok(!validPath("https://evil/api/x"));
   assert.ok(!validPath("/ws/ui"));
   assert.ok(!validPath("/api/x?y=1"));
+  assert.ok(validPath("/api/boards/dev-bss:/home/daniel/app:export-csv/tickets/07/answer"));
 });
 
 test("a page on another host opens on the configured hub", () => {
@@ -199,7 +200,7 @@ test("answering a dialog posts the option and the question to the row's answer p
   hub.stop();
   for (let i = 0; i < 20 && !hub.snapshot().online; i++) await new Promise((r) => setTimeout(r, 5));
   await hub.answer("hub/dev-bss/export-csv#07", 0);
-  assert.equal(seen[1].url, BASE + "/api/tickets/dev-bss%3A%2Fhome%2Fdaniel%2Fapp%3Aexport-csv/07/answer");
+  assert.equal(seen[1].url, BASE + "/api/boards/dev-bss:/home/daniel/app:export-csv/tickets/07/answer");
   assert.deepEqual(JSON.parse(String(seen[1].init.body)), { option: 0, question: "Do you want to run npm test?" });
   for (let i = 0; i < 20 && seen.length < 3; i++) await new Promise((r) => setTimeout(r, 5));
   await assert.rejects(hub.answer("hub/dev-bss/export-csv#07", 2), /409: the agent's dialog changed/);
