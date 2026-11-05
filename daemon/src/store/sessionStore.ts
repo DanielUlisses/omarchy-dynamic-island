@@ -14,6 +14,7 @@ import path from "node:path";
 import { canonicalConfigDir } from "../accounts/accountManager.js";
 import { fromToolInput, type FileDiff } from "../diff/diffEngine.js";
 import type { HerdrAgent } from "../herdr/herdrBridge.js";
+import type { HubAgent } from "../hub/hubBridge.js";
 import { asObject, asString, type Decision, type HookEvent } from "../protocol.js";
 
 export type SessionStatus = "working" | "blocked" | "idle" | "done";
@@ -126,6 +127,7 @@ export class SessionStore extends EventEmitter {
   /** session id -> tool names allowed for the rest of that session. */
   private alwaysAllow = new Map<string, Set<string>>();
   private herdr: HerdrAgent[] = [];
+  private hub: HubAgent[] = [];
   private nextDiffId = 1;
   private nextApprovalId = 1;
 
@@ -136,7 +138,14 @@ export class SessionStore extends EventEmitter {
     this.changed();
   }
 
-  get herdrAgents(): HerdrAgent[] { return this.herdr; }
+  /** The devbox agents tk-hub reports (hub/hubBridge.ts). */
+  setHub(agents: HubAgent[]): void {
+    this.hub = agents;
+    this.changed();
+  }
+
+  /** herdr's agents, then the hub's, in herdr's shape. */
+  get herdrAgents(): HerdrAgent[] { return (this.herdr as HerdrAgent[]).concat(this.hub); }
 
   session(id: string): Session | undefined { return this.sessions.get(id); }
 
@@ -325,8 +334,8 @@ export class SessionStore extends EventEmitter {
     const out: MergedAgent[] = [];
     const used = new Set<string>();
     const blockedSessions = new Set(this.approvals().map((a) => a.sessionId));
-    for (const h of this.herdr) {
-      const s = h.machine === "" ? [...this.sessions.values()].find((x) => x.herdrPane === h.pane) : undefined;
+    for (const h of this.herdrAgents) {
+      const s = h.machine === "" && !isHub(h) ? [...this.sessions.values()].find((x) => x.herdrPane === h.pane) : undefined;
       if (s) used.add(s.id);
       out.push(row(h.key, h, s, blockedSessions));
     }
@@ -352,6 +361,8 @@ export class SessionStore extends EventEmitter {
   }
 }
 
+const isHub = (h: HerdrAgent | null): h is HubAgent => (h as HubAgent | null)?.source === "hub";
+
 export interface MergedAgent {
   key: string;
   machine: string;
@@ -374,6 +385,14 @@ export interface MergedAgent {
   configDir: string;
   steps: Step[];
   terminal: Terminal | null;
+  /** "hub" for a devbox agent tk-hub reports, else "". */
+  source: string;
+  /** The hub's page for it. */
+  url: string;
+  nn: string;
+  client: string;
+  ask: HubAgent["ask"];
+  dialog: HubAgent["dialog"];
 }
 
 function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked: Set<string>): MergedAgent {
@@ -395,5 +414,7 @@ function row(key: string, h: HerdrAgent | null, s: Session | undefined, blocked:
     hookSession: s?.id ?? "", lastTool: s?.lastTool ?? "", lastPrompt: s?.lastPrompt ?? "",
     added: s?.added ?? 0, removed: s?.removed ?? 0, diffCount: s?.diffs.length ?? 0, configDir: s?.configDir ?? "",
     steps: s?.steps ?? [], terminal: s?.terminal ?? null,
+    source: isHub(h) ? "hub" : "", url: isHub(h) ? h.url : "", nn: isHub(h) ? h.nn : "", client: isHub(h) ? h.client : "",
+    ask: isHub(h) ? h.ask : null, dialog: isHub(h) ? h.dialog : null,
   };
 }

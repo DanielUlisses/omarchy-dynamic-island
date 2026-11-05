@@ -159,9 +159,11 @@ apply as soon as you save the file.
 | `markdownEditor` | `"typora"` | What opens a meeting's summary and transcript (falls back to `xdg-open` when it isn't installed) |
 | `meetingsDir` | `~/.local/share/omarchy-dynamic-island/meetings` | Where those files go |
 | `bluetooth`, `camera`, `calendar` | `true` | Turn those activities off |
-| `herdr` | `true` | Show herdr agents (see below) |
+| `herdr` | `"auto"` | Ask herdr for its agents (see below): `"auto"` does it only while `hubUrl` is empty, `true` always, `false` never |
 | `herdrToasts` | `true` | Toast when an agent needs you or finishes |
 | `herdrInterval` | `5` | Seconds between asks to every herdr machine |
+| `hubUrl` | `""` | Your [tk-hub](#tk-hub), e.g. `"https://tk-hub.example.ts.net"`; empty for none |
+| `hubInterval` | `10` | Seconds between asks to the hub |
 | `notifications` | `true` | Show notifications in the island (replaces Omarchy's notification popups) |
 | `inbox` | `true` | Show the bell for notifications waiting in the inbox |
 | `osd` | `true` | Show Omarchy's on-screen popups (volume, brightness, mic, …) in the island instead of at the bottom |
@@ -292,6 +294,29 @@ The island asks every enabled machine at once every `herdrInterval` seconds
 (`herdr --machine <id> agent list`). A machine that doesn't answer keeps what
 it last reported. The local server is only asked while it is running, so the
 island never starts one.
+
+## tk-hub
+
+With `hubUrl` set, the devbox agents come from tk-hub instead of herdr: the
+daemon asks `GET {hubUrl}/api/desktop` every `hubInterval` seconds and the
+hub's agents fill the same rows, bubble and toasts herdr's did (herdr polling
+goes off unless `herdr` is `true`; island-hook's local sessions stay). The
+request carries a `desktop` token, read from
+`~/.config/omarchy-dynamic-island/hub-token`, which must be `0600`; it never
+goes in shell.json.
+
+```bash
+# on the hub box
+hub-server token add desktop --kind desktop
+# here, with the token it printed
+install -m 600 /dev/null ~/.config/omarchy-dynamic-island/hub-token
+printf '%s' '<token>' > ~/.config/omarchy-dynamic-island/hub-token
+```
+
+then `"hubUrl": "https://<your hub>"` in the island's shell.json entry (and
+`"herdr": "auto"` if an older island wrote `true` there). When the hub doesn't
+answer, the island keeps the last list and Home shows a grey dot and
+"hub offline · N min".
 
 ```bash
 omarchy-shell dynamic-island agents          # the live agents, as JSON

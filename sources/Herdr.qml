@@ -18,7 +18,13 @@ Item {
   id: herdr
 
   property var island: null
-  readonly property bool wanted: !!island && island.setting("herdr", true) !== false
+  // With tk-hub set up (`hubUrl`), the daemon brings the devbox agents from the
+  // hub and herdr polling is off, unless `herdr` is set to true; `"auto"` (the
+  // default) means on only without a hub.
+  readonly property string hubUrl: island ? String(island.setting("hubUrl", "") || "") : ""
+  readonly property var herdrSetting: island ? island.setting("herdr", "auto") : "auto"
+  readonly property bool localOn: herdrSetting === false ? false : (herdrSetting === true ? true : hubUrl === "")
+  readonly property bool wanted: !!island && (localOn || hubUrl !== "")
   readonly property int interval: Math.max(2, Number(island ? island.setting("herdrInterval", 5) : 5) || 5) * 1000
 
   // The daemon's poll (sources/Assistant.qml), when it is connected.
@@ -83,7 +89,7 @@ Item {
   Timer {
     interval: herdr.interval
     repeat: true
-    running: herdr.wanted && herdr.available && !herdr.demo && !herdr.external
+    running: herdr.localOn && herdr.available && !herdr.demo && !herdr.external
     triggeredOnStart: true
     onTriggered: herdr.refresh()
   }
@@ -109,7 +115,7 @@ Item {
 
   function refresh() {
     if (external) { assistant.call("herdr.refresh", {}); return }
-    if (!demo && wanted && !poll.running) poll.running = true
+    if (!demo && localOn && !poll.running) poll.running = true
   }
 
   function take(text) {

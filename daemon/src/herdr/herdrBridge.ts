@@ -113,6 +113,8 @@ export class HerdrBridge {
 
   constructor(private readonly onChange: (agents: HerdrAgent[]) => void, private intervalMs = 4000) {}
 
+  get running(): boolean { return this.timer !== null; }
+
   start(): void {
     if (this.timer) return;
     void this.poll();
