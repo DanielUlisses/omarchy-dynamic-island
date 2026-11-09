@@ -1,8 +1,9 @@
 import QtQuick
 import qs.Commons
 
-// tk-hub's next move (the first of Today's "Your moves"), opened from the
-// resting ticker: what it is and why, then its action, Later (set it aside)
+// tk-hub's next move (the first item of the Day screen's open block), opened
+// from the resting ticker: the block it is in (client, its clock, the block
+// after it), what the move is and why, then its action, Later (set it aside)
 // and Open (its page in the hub). The action and Later call the routes the hub
 // gave for this move, with the desktop token, through the daemon.
 Item {
@@ -31,7 +32,7 @@ Item {
 
     Text {
       width: parent.width
-      text: view.move ? ["Next move", view.move.client, view.move.rank].filter(function(x) { return x }).join("  ·  ") : ""
+      text: view.move ? Model.blockLine(island.hubBlock, view.move, new Date().getTime()) : ""
       textFormat: Text.PlainText
       renderType: Text.NativeRendering
       elide: Text.ElideRight

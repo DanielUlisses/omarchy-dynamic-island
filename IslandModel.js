@@ -860,17 +860,17 @@ function hubDialogText(dialog) {
 
 // tk-hub's pages, as its navbar names them (hub-web's command.ts PAGES).
 var hubPages = [
-  { page: "today", names: ["today", "home"] }, { page: "calendar", names: ["calendar"] },
-  { page: "timeline", names: ["timeline"] }, { page: "projects", names: ["projects"] },
-  { page: "insights", names: ["insights"] }, { page: "sessions", names: ["sessions"] },
-  { page: "inbox", names: ["inbox"] }, { page: "cards", names: ["cards"] },
-  { page: "live", names: ["live", "live board", "board", "boards"] }, { page: "devboxes", names: ["devboxes", "devbox"] },
-  { page: "finance", names: ["finance"] }, { page: "ask", names: ["ask"] }
+  { page: "today", names: ["day", "today", "home"] }, { page: "threads", names: ["chat", "threads"] },
+  { page: "projects", names: ["projects"] }, { page: "calendar", names: ["calendar"] },
+  { page: "live", names: ["live", "live board", "board", "boards", "cards"] }, { page: "insights", names: ["insights"] },
+  { page: "batches", names: ["batches"] }, { page: "finance", names: ["finance"] },
+  { page: "devboxes", names: ["devboxes", "devbox"] }, { page: "sessions", names: ["sessions"] },
+  { page: "inbox", names: ["inbox"] }
 ]
 
 // Hub mode in Island Chat: the words as a jump, when they name one. "#07"
 // (or "export-csv#07") is that ticket's page, a board's name the page of its
-// most urgent agent, a page's name ("today", "live board") that page, and a
+// most urgent agent, a page's name ("day", "live board") that page, and a
 // project the hub's meetings name its Projects page. -> { url, label } or null,
 // and then the words go to the hub as a question.
 function hubJump(text, agents, meetings, hubUrl) {
@@ -1427,4 +1427,30 @@ function highlightLine(text, c) {
   out += plain(code.substring(last))
   if (rest) out += paint(c.comment, rest)
   return out
+}
+
+// "25m", "1h", "1h30" — a block's minutes as the hub's Day screen writes them.
+function minutesText(min) {
+  var m = Math.max(0, Math.round(Number(min) || 0))
+  if (m < 60) return m + "m"
+  return Math.floor(m / 60) + "h" + (m % 60 ? (m % 60 < 10 ? "0" : "") + (m % 60) : "")
+}
+
+// The resting ticker's tk-hub item: "bss · 3 left · Review #10…", or the move alone without a block.
+function blockTicker(block, title) {
+  var t = String(title || "")
+  if (!block) return t.length > 28 ? t.slice(0, 27) + "…" : t
+  var head = block.client + " · " + block.left + " left · "
+  var room = Math.max(12, 40 - head.length)
+  return head + (t.length > room ? t.slice(0, room - 1) + "…" : t)
+}
+
+// The move card's first line: "bss block 1 of 3 · 25m of 1h · next lanvera in 40m",
+// or "Next move · <client>" when the hub sent no block.
+function blockLine(block, move, now) {
+  if (!block) return ["Next move", move && move.client].filter(function(x) { return x }).join("  ·  ")
+  var parts = [block.client + " block " + block.position + " of " + block.of,
+               minutesText(block.workedMin) + " of " + minutesText(block.plannedMin)]
+  if (block.next) parts.push("next " + block.next.client + (block.next.start > now ? " " + untilText(block.next.start, now) : ""))
+  return parts.join("  ·  ")
 }

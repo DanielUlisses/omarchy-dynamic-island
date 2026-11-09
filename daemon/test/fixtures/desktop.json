@@ -70,6 +70,22 @@
       "answer": null
     }
   ],
+  "block": {
+    "client": "bss",
+    "position": 1,
+    "of": 3,
+    "planned_min": 60,
+    "worked_min": 25,
+    "ceiling_min": 120,
+    "start_at": "2026-11-05T12:00:00Z",
+    "end_at": "2026-11-05T13:00:00Z",
+    "left": 3,
+    "next": {
+      "client": "lanvera",
+      "start_at": "2026-11-05T13:00:00Z",
+      "left": 2
+    }
+  },
   "moves": [
     {
       "id": "task:42",

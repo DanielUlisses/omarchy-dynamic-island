@@ -45,6 +45,11 @@ test("a page on another host opens on the configured hub", () => {
 
 test("the contract's answer parses into herdr-shaped rows, moves and meetings", () => {
   const d = parseDesktop(fixture(), BASE);
+  assert.deepEqual(d.block, {
+    client: "bss", position: 1, of: 3, plannedMin: 60, workedMin: 25, ceilingMin: 120,
+    start: Date.parse("2026-11-05T12:00:00Z"), end: Date.parse("2026-11-05T13:00:00Z"), left: 3,
+    next: { client: "lanvera", start: Date.parse("2026-11-05T13:00:00Z"), left: 2 },
+  });
   assert.deepEqual(d.counts, { needs: 1, review: 1, working: 4 });
   assert.equal(d.agents.length, 3);
   const a = d.agents[0];
@@ -67,6 +72,8 @@ test("the contract's answer parses into herdr-shaped rows, moves and meetings", 
 });
 
 test("malformed answers are dropped, not thrown", () => {
+  assert.equal(parseDesktop({ block: { client: "" } }, BASE).block, null);
+  assert.equal(parseDesktop({}, BASE).block, null);
   const d = parseDesktop({ agents: [null, { key: "" }, { key: "x", status: "weird" }], moves: [{ id: "m", title: "t", action: { method: "DELETE", path: "/api/x" } }], meetings: [{ id: "1" }] }, BASE);
   assert.equal(d.agents.length, 1);
   assert.equal(d.agents[0].status, "unknown");
