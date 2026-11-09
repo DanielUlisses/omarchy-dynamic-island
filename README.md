@@ -338,16 +338,18 @@ index and the question it showed; the hub refuses if the dialog on screen has
 changed since. A dialog the hub can't answer shows its options as text, with
 **Open in hub**.
 
-The resting ticker also flips to the hub's next move (the first of Today's
-"Your moves"). Click the island while it shows it to open the move's card:
-what it is and why, its action (Start, Review, ...), **Later** to set it
-aside, and **Open** for its page in the hub. The action and Later call only
+The resting ticker also flips to the hub's day: the block you are in (one
+client's stretch of the Day screen) and its next move, as `bss · 3 left ·
+Review #10…`. Click the island while it shows it to open the move's card: the
+block (`bss block 1 of 3 · 25m of 1h · next lanvera in 40m`), what the move is
+and why, its action (Start, Done, ...), **Later** to set it aside, and **Open**
+for its page in the hub. The action and Later call only
 the routes the hub gave for that move.
 
 Island Chat gets a **Hub** mode beside Island and Secretary (the chip, or
 **Ctrl+A** to cycle): a question goes to the hub's `POST /api/ask` and its
 answer shows in the chat, each one following the last until **New**. `#07`
-(or `board#07`), a board's name or a hub page's name (Today, Live board,
+(or `board#07`), a board's name or a hub page's name (Day, Live board,
 Projects, ...) opens that page in the hub instead. A project name the hub's
 meetings mention opens Projects, since the island doesn't know the hub's
 project ids.

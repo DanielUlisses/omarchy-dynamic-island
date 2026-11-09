@@ -35,7 +35,7 @@ Item {
   property var secretary: ({ path: "", present: false })
   // tk-hub (daemon/src/hub/hubBridge.ts): whether it is set up and answering,
   // its counts, Today's first moves and its meetings.
-  property var hub: ({ configured: false, url: "", online: false, lastOkAt: 0, error: "", counts: {}, moves: [], meetings: [] })
+  property var hub: ({ configured: false, url: "", online: false, lastOkAt: 0, error: "", counts: {}, block: null, moves: [], meetings: [] })
   property var chat: ({ busy: false, messages: [], profileId: "", model: "", workspace: "island", error: "" })
 
   // Transcribed meetings, newest first (daemon: meetings.list).

@@ -1,8 +1,8 @@
 // tk-hub (the developer's dashboard for the agents on his devboxes): the
 // island asks it for one small answer, GET {hubUrl}/api/desktop, every
 // `hubInterval` seconds (10), with a `desktop` token. That answer holds the
-// devbox agents, the first moves of Today, and the hub's meetings for today
-// and tomorrow.
+// devbox agents, the Day screen's open block with the first items of the
+// day's queues (its moves), and the hub's meetings for today and tomorrow.
 //
 // The agents come out in the same shape as herdr's (HerdrAgent), so the
 // island's rows, bubble and toasts take them as they are; a hub row carries
@@ -110,6 +110,21 @@ export interface HubMeeting {
   project: string;
 }
 
+/** The Day screen's open block: whose time it is, how far along, and the block after it. */
+export interface HubBlock {
+  client: string;
+  position: number;
+  of: number;
+  plannedMin: number;
+  workedMin: number;
+  ceilingMin: number;
+  /** Epoch ms, 0 when the block has no time left today. */
+  start: number;
+  end: number;
+  left: number;
+  next: { client: string; start: number; left: number } | null;
+}
+
 export interface HubDialog { question: string; text: string; options: string[] }
 
 /** A devbox agent from the hub, in herdr's shape plus what only the hub knows. */
@@ -138,6 +153,7 @@ export interface Desktop {
   at: number;
   counts: { needs: number; review: number; working: number };
   agents: HubAgent[];
+  block: HubBlock | null;
   moves: HubMove[];
   meetings: HubMeeting[];
 }
@@ -169,6 +185,21 @@ function dialog(v: unknown): HubDialog | null {
   const options = (Array.isArray(o.options) ? o.options : []).map((x) => clip(x, 80)).filter(Boolean).slice(0, 6);
   const d = { question: clip(o.question, 300), text: asString(o.text).slice(0, 2000), options };
   return d.question || d.text || options.length ? d : null;
+}
+
+function block(v: unknown): HubBlock | null {
+  const o = asObject(v);
+  const client = clip(o?.client, 64);
+  if (!o || !client) return null;
+  const n = asObject(o.next);
+  const nextClient = clip(n?.client, 64);
+  return {
+    client,
+    position: count(o.position), of: count(o.of),
+    plannedMin: count(o.planned_min), workedMin: count(o.worked_min), ceilingMin: count(o.ceiling_min),
+    start: time(o.start_at), end: time(o.end_at), left: count(o.left),
+    next: n && nextClient ? { client: nextClient, start: time(n.start_at), left: count(n.left) } : null,
+  };
 }
 
 /** GET /api/desktop's answer -> what the island shows. Anything malformed is left out, never thrown. */
@@ -235,7 +266,7 @@ export function parseDesktop(raw: unknown, base: string): Desktop {
   return {
     at: time(o.at) || Date.now(),
     counts: { needs: count(c.needs), review: count(c.review), working: count(c.working) },
-    agents, moves: moves.slice(0, 3), meetings,
+    agents, block: block(o.block), moves: moves.slice(0, 3), meetings,
   };
 }
 
@@ -259,6 +290,7 @@ export interface HubState {
   lastOkAt: number;
   error: string;
   counts: Desktop["counts"];
+  block: HubBlock | null;
   moves: HubMove[];
   meetings: HubMeeting[];
 }
@@ -390,11 +422,11 @@ export class HubBridge {
   /**
    * Runs a move's action or its Later: only the method and path the hub gave
    * for that move in its last answer, so the island can't be made to call
-   * any other route. Polls again after, so Today's next move shows.
+   * any other route. Polls again after, so the block's next move shows.
    */
   async runMove(id: string, which: "action" | "later"): Promise<unknown> {
     const move = this.desktop?.moves.find((m) => m.id === id);
-    if (!move) throw new HubError(0, "that move is no longer on Today");
+    if (!move) throw new HubError(0, "that move is no longer on the day's list");
     const act = move[which];
     if (!act) throw new HubError(0, which === "later" ? "this move can't be set aside" : "this move only opens");
     try {
@@ -439,6 +471,7 @@ export class HubBridge {
       lastOkAt: this.lastOkAt,
       error: this.error,
       counts: this.desktop?.counts ?? { needs: 0, review: 0, working: 0 },
+      block: this.desktop?.block ?? null,
       moves: this.desktop?.moves ?? [],
       meetings: this.desktop?.meetings ?? [],
     };

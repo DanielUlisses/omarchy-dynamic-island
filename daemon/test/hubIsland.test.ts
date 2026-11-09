@@ -60,6 +60,8 @@ test("hub mode: #07, a board or a page jumps; anything else is a question", () =
   assert.equal(url("#99"), null);
   assert.equal(url("receipts"), BASE + "/#/ticket/b/07");
   assert.equal(url("open Today"), BASE + "/#/today");
+  assert.equal(url("day"), BASE + "/#/today");
+  assert.equal(url("cards"), BASE + "/#/live");
   assert.equal(url("live board"), BASE + "/#/live");
   assert.equal(url("itm-9909"), BASE + "/#/projects");
   assert.equal(url("what's blocking pythian?"), null);

@@ -954,6 +954,8 @@ Item {
   property bool moveOpen: false
   // The move as it was when opened, so a poll can't swap it under the click.
   property var openMove: null
+  // The Day screen's open block (client, clock, what's left, the block after it), or null.
+  readonly property var hubBlock: assistantSource.hub.block || null
   readonly property var nextMove: assistantSource.hub.moves && assistantSource.hub.moves.length > 0 ? assistantSource.hub.moves[0] : null
 
   function openMoveCard() {
@@ -1174,9 +1176,8 @@ Item {
       items.push({ key: "event", text: "󰃭 " + Model.untilText(next.start, idleClock.date.getTime()), color: accentColor })
     var festivals = calendar.todayAllDay
     if (festivals.length > 0) items.push({ key: "festival", text: "✦ " + festivals[0], color: orangeColor })
-    // tk-hub's next move; a click on it opens its card.
-    if (nextMove) items.push({ key: "move", text: "󰁔 " + (nextMove.title.length > 28 ? nextMove.title.slice(0, 27) + "…" : nextMove.title),
-                               color: accentColor })
+    // tk-hub's day: the open block and its next move; a click on it opens the move's card.
+    if (nextMove) items.push({ key: "move", text: "󰁔 " + Model.blockTicker(hubBlock, nextMove.title), color: accentColor })
     if (notifications.doNotDisturb) items.push({ key: "dnd", text: "󰂛 Silenced", color: orangeColor })
     // What the coding agents changed this session, from the hook relay.
     if (assistantSource.connected) {
