@@ -295,6 +295,12 @@ window attached to that machine comes up (`herdr --remote <ssh target>`, or
 plain `herdr` for this machine). With no such window, one is opened in foot
 with the widget's app id, so the two share windows.
 
+A `herdr://[user@]box[/workspace:pane]` link does the same from a web page:
+tk-hub's **Herdr** button on a session is one. `./install-hooks.sh` installs
+`herdr-open` and registers it for the scheme (`x-scheme-handler/herdr`); the
+box is one tailnet name with no dot, and the browser asks once before it
+opens the link.
+
 The island asks every enabled machine at once every `herdrInterval` seconds
 (`herdr --machine <id> agent list`). A machine that doesn't answer keeps what
 it last reported. The local server is only asked while it is running, so the
