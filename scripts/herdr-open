@@ -1,0 +1,83 @@
+#!/bin/bash
+# Open a herdr:// link (the hub's Herdr button on a session): land on a box's
+# herdr session in a terminal, the way the island's Go does.
+#
+#   herdr-open herdr://[user@]box[/workspace:pane]
+#
+# The box is one name with no dot (a tailnet or LAN name), so a link on some
+# web page can't point the terminal at a host out on the internet. With a pane,
+# it is focused on the box first (best effort, over ssh). Then the window
+# already attached to that box comes up, or a new one opens (foot, with the
+# herdr bar widget's app id, so the two share windows).
+#
+# install-hooks.sh registers it for the herdr scheme (x-scheme-handler/herdr).
+set -uo pipefail
+
+url=${1-}
+[[ $url =~ ^herdr://(([A-Za-z0-9][A-Za-z0-9_-]{0,31}@)?[A-Za-z0-9][A-Za-z0-9-]{0,62})(/([A-Za-z0-9][A-Za-z0-9_-]{0,31}:[A-Za-z0-9_-]{1,32})?)?$ ]] || {
+  echo "herdr-open: not a herdr://[user@]box[/workspace:pane] link" >&2
+  exit 2
+}
+target=${BASH_REMATCH[1]} pane=${BASH_REMATCH[5]-}
+
+if [ -n "$pane" ]; then
+  timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 -- "$target" \
+    "bash -lc 'herdr agent focus $pane'" >/dev/null 2>&1 || true
+fi
+
+# The window whose herdr client is attached to this box (`herdr --remote
+# <target>`, default session): from that process, up to the window holding it.
+declare -A win=()
+while IFS=$'\t' read -r pid addr ws; do win[$pid]="$addr"$'\t'"$ws"; done < <(
+  hyprctl clients -j 2>/dev/null |
+    jq -r '.[]? | select(.pid > 0) | "\(.pid)\t\(.address)\t\(.workspace.name // "")"' 2>/dev/null
+)
+found=''
+# shellcheck disable=SC2009  # the whole command line is read, flags and all
+while read -r pid args; do
+  read -r -a w <<<"$args"
+  [[ ${w[0]##*/} == herdr ]] || continue
+  name=default tgt='' ok=1
+  for ((j = 1; j < ${#w[@]}; j++)); do
+    case ${w[j]} in
+      --session) name=${w[j + 1]-}; j=$((j + 1)) ;;
+      --remote) tgt=${w[j + 1]-}; j=$((j + 1)) ;;
+      -*) ;;
+      *) ok=0; break ;;
+    esac
+  done
+  tgt=${tgt#ssh://}
+  # The same box under its full tailnet name, or with no user, is the same box.
+  host=${tgt#*@} host=${host%%.*}
+  [ $ok = 1 ] && [ "$name" = default ] && [ -n "$tgt" ] && [ "$host" = "${target#*@}" ] || continue
+  a=$pid
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if [ -n "${win[$a]-}" ]; then found=${win[$a]}; break 2; fi
+    a=$(ps -o ppid= -p "$a" 2>/dev/null | tr -d ' ')
+    [ -n "$a" ] && [ "$a" != 0 ] && [ "$a" != 1 ] || break
+  done
+done < <(ps -eo pid=,args= 2>/dev/null | grep -E 'her[d]r')
+
+if [ -n "$found" ]; then
+  IFS=$'\t' read -r addr ws <<<"$found"
+  [[ $addr =~ ^0x[0-9a-fA-F]+$ ]] || exit 0
+  # A window on another workspace stays hidden however hard it is focused.
+  [[ $ws =~ ^(special:)?[A-Za-z0-9_-]{1,32}$ ]] &&
+    hyprctl dispatch "hl.dsp.focus({ workspace = '$ws' })" >/dev/null 2>&1
+  hyprctl dispatch "hl.dsp.focus({ window = 'address:$addr' })" >/dev/null 2>&1 ||
+    hyprctl dispatch focuswindow "address:$addr" >/dev/null 2>&1
+  exit 0
+fi
+
+cmd=(herdr --remote "$target")
+launch=(setsid)
+command -v uwsm-app >/dev/null 2>&1 && launch=(setsid uwsm-app --)
+if command -v foot >/dev/null 2>&1; then
+  launch+=(foot --app-id=org.omarchy.herdr "--working-directory=$HOME" -e "${cmd[@]}")
+elif command -v xdg-terminal-exec >/dev/null 2>&1; then
+  launch+=(xdg-terminal-exec --app-id=org.omarchy.herdr "--dir=$HOME" -- "${cmd[@]}")
+else
+  echo "herdr-open: no terminal (foot or xdg-terminal-exec)" >&2
+  exit 1
+fi
+"${launch[@]}" >/dev/null 2>&1 &
