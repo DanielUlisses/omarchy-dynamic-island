@@ -267,6 +267,11 @@ Item {
   readonly property string countdown: next ? Model.untilText(next.start, now) : ""
 
   property string announced: ""
+  property string warned: ""
+  // "meetingFlash": glow around every monitor when a meeting starts (and
+  // "meetingFlashWarnMinutes" before it; 0 turns the warning off).
+  readonly property bool flashOn: island ? island.setting("meetingFlash", true) !== false : false
+  readonly property real flashWarnMinutes: island ? Math.max(0, Number(island.setting("meetingFlashWarnMinutes", 1))) : 0
 
   Timer {
     interval: 20000
@@ -276,13 +281,24 @@ Item {
     onTriggered: {
       calendar.now = Date.now()
       var ev = calendar.next
-      // One heads-up as it starts.
-      if (ev && ev.start <= calendar.now && calendar.now - ev.start < 60000) {
-        var key = ev.title + "@" + ev.start
-        if (calendar.announced !== key && calendar.island) {
-          calendar.announced = key
-          calendar.island.toast({ title: ev.title || "Event", body: "Starting now", icon: "󰃭", color: "accent", duration: 8000 })
-        }
+      if (!ev || !calendar.island) return
+      var key = ev.title + "@" + ev.start
+      // A warning shortly before: one amber flash around every monitor.
+      var warnMs = calendar.flashWarnMinutes * 60000
+      if (calendar.flashOn && warnMs > 0 && ev.start > calendar.now && ev.start - calendar.now <= warnMs
+          && calendar.warned !== key) {
+        calendar.warned = key
+        calendar.island.flashScreens(calendar.island.setting("meetingFlashWarnColor", "#ffb020"), 1)
+        calendar.island.toast({ title: ev.title || "Event", body: "Starts " + Model.untilText(ev.start, calendar.now),
+                                icon: "󰃭", color: "warning", duration: 10000 })
+      }
+      // As it starts: a red toast and a red glow flashing around every monitor.
+      if (ev.start <= calendar.now && calendar.now - ev.start < 60000 && calendar.announced !== key) {
+        calendar.announced = key
+        if (calendar.flashOn)
+          calendar.island.flashScreens(calendar.island.setting("meetingFlashColor", "#ff3030"),
+                                       Number(calendar.island.setting("meetingFlashCount", 3)) || 3)
+        calendar.island.toast({ title: ev.title || "Event", body: "Starting now", icon: "󰃭", color: "urgent", duration: 20000 })
       }
     }
   }

@@ -152,6 +152,9 @@ apply as soon as you save the file.
 | `glow` | `false` | Soft light behind the island in the music's color |
 | `calendars` | `[]` | iCalendar links or files for the next-meeting activity, e.g. `["https://…/basic.ics", "~/cal.ics"]` |
 | `calendarLeadMinutes` | `15` | How early a meeting takes the pill; from two hours out it takes the side bubble over the agents |
+| `meetingFlash` | `true` | When a meeting starts, a red glow flashes around the edges of every monitor (and the "Starting now" toast turns red and stays 20s), so you see it while looking at another screen. Try it with `omarchy-shell dynamic-island flash red 3` |
+| `meetingFlashWarnMinutes` | `1` | A single amber flash this many minutes before a meeting starts; `0` turns the warning off |
+| `meetingFlashColor`, `meetingFlashWarnColor`, `meetingFlashCount` | `#ff3030`, `#ffb020`, `3` | The start and warning colors (a hex value or `red`/`warning`/`accent`), and how many times the start flash blinks |
 | `calendarExclude` | `""` | Comma-separated keywords; matching event titles are hidden |
 | `calendarRefreshMinutes` | `15` | How often calendar feeds are re-read |
 | `launchers`, `calendarLaunchers`, `launcherRules`, `browserCommand` | | How meeting links open (see Calendar settings) |

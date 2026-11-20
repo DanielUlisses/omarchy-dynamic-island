@@ -720,6 +720,7 @@ Item {
   Clocks { id: clockSource; island: root }
   Devices { island: root }
   Calendar { id: calendarSource; island: root }
+  ScreenFlash { id: screenFlash; thickness: root.s(140) }
   Activities { id: activitySource; island: root }
   Herdr { id: herdrSource; island: root }
   Assistant { id: assistantSource; island: root }
@@ -1452,6 +1453,11 @@ Item {
     return n
   }
 
+  // Glow around the edges of every monitor, `times` flashes (meeting alerts).
+  function flashScreens(color, times) {
+    screenFlash.start(toneFor(color || "#ff3030"), Number(times) || 3)
+  }
+
   function toast(payload) {
     showHud({
       key: "toast",
@@ -1586,6 +1592,8 @@ Item {
       return "ok"
     }
     function show(payloadJson: string): string { root.open(payloadJson); return "ok" }
+    // Flash a glow around every monitor: flash "" 0 for the meeting default (red, 3 times).
+    function flash(color: string, times: string): string { root.flashScreens(color, Number(times)); return "ok" }
     function demo(kind: string): string { return root.runDemo(kind) }
 
     // Timer: "25m", "90s", "1h30m", "10:00", or plain minutes.
