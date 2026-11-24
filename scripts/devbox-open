@@ -1,0 +1,35 @@
+#!/bin/bash
+# Open a devbox:// link (the hub's Terminal button on a coordinator, a thread
+# or a chat): a terminal attached to that session's tmux pane on its box,
+# through devboxes' runner.
+#
+#   devbox-open devbox://box/session
+#
+# Runs `ssh -t <box> devbox-run attach <session>` in a new foot window (or
+# xdg-terminal-exec). The box is one name with no dot (a tailnet or LAN name)
+# and the session a runner name, so a link on some web page can't point the
+# terminal at a host out on the internet or slip anything into the command.
+# Ctrl-b d detaches; the session goes on.
+#
+# install-hooks.sh registers it for the devbox scheme (x-scheme-handler/devbox).
+set -uo pipefail
+
+url=${1-}
+[[ $url =~ ^devbox://([A-Za-z0-9][A-Za-z0-9-]{0,62})/([A-Za-z0-9][A-Za-z0-9._-]{0,63})/?$ ]] || {
+  echo "devbox-open: not a devbox://box/session link" >&2
+  exit 2
+}
+box=${BASH_REMATCH[1]} session=${BASH_REMATCH[2]}
+
+cmd=(ssh -t -- "$box" devbox-run attach "$session")
+launch=(setsid)
+command -v uwsm-app >/dev/null 2>&1 && launch=(setsid uwsm-app --)
+if command -v foot >/dev/null 2>&1; then
+  launch+=(foot --app-id=org.omarchy.devbox "--title=$session on $box" "--working-directory=$HOME" -e "${cmd[@]}")
+elif command -v xdg-terminal-exec >/dev/null 2>&1; then
+  launch+=(xdg-terminal-exec --app-id=org.omarchy.devbox "--title=$session on $box" "--dir=$HOME" -- "${cmd[@]}")
+else
+  echo "devbox-open: no terminal (foot or xdg-terminal-exec)" >&2
+  exit 1
+fi
+"${launch[@]}" >/dev/null 2>&1 &

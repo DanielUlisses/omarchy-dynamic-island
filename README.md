@@ -304,6 +304,13 @@ tk-hub's **Herdr** button on a session is one. `./install-hooks.sh` installs
 box is one tailnet name with no dot, and the browser asks once before it
 opens the link.
 
+Since the devboxes moved from herdr to their tmux runner (`devbox-run`), the
+hub's **Terminal** button on a coordinator, a thread or a chat is a
+`devbox://box/session` link. `devbox-open`, registered the same way
+(`x-scheme-handler/devbox`), opens a foot window running
+`ssh -t <box> devbox-run attach <session>`; `Ctrl-b d` detaches and the
+session goes on.
+
 The island asks every enabled machine at once every `herdrInterval` seconds
 (`herdr --machine <id> agent list`). A machine that doesn't answer keeps what
 it last reported. The local server is only asked while it is running, so the

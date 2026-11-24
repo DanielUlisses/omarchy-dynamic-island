@@ -1,7 +1,8 @@
 #!/bin/bash
 # Set up the island's assistant: build island-agent-daemon, link island-hook,
-# island-agent-daemon, island-ctl and herdr-open into ~/.local/bin, run the
-# daemon as a systemd user service, register herdr-open for herdr:// links, and
+# island-agent-daemon, island-ctl, herdr-open and devbox-open into ~/.local/bin,
+# run the daemon as a systemd user service, register herdr-open for herdr://
+# links and devbox-open for devbox:// links, and
 # add the island's hooks (and plan-reading status line) to Claude Code's settings. Safe to re-run; every step is idempotent.
 #
 #   ./install-hooks.sh                       ~/.claude (or $CLAUDE_CONFIG_DIR)
@@ -23,6 +24,7 @@ units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit="omarchy-island-daemon.service"
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 opener="omarchy-herdr-open.desktop"
+boxopener="omarchy-devbox-open.desktop"
 
 uninstall=false keybinds=false hook_args=()
 while [ $# -gt 0 ]; do
@@ -52,10 +54,10 @@ if $uninstall; then
   systemctl --user disable --now "$unit" 2>/dev/null || true
   rm -f "$units/$unit"
   systemctl --user daemon-reload 2>/dev/null || true
-  for f in island-hook island-agent-daemon island-ctl herdr-open; do
+  for f in island-hook island-agent-daemon island-ctl herdr-open devbox-open; do
     [ -L "$bin/$f" ] && rm -f "$bin/$f"
   done
-  rm -f "$apps/$opener" "$share/herdr-open"
+  rm -f "$apps/$opener" "$share/herdr-open" "$apps/$boxopener" "$share/devbox-open"
   command -v update-desktop-database >/dev/null && update-desktop-database "$apps" >/dev/null 2>&1 || true
   rm -rf "$share/daemon"
   echo "Done. ~/.config/omarchy-dynamic-island (accounts.json) was kept."
@@ -80,6 +82,8 @@ install -m 755 "$here/scripts/island-ctl" "$share/island-ctl"
 ln -sfn "$share/island-ctl" "$bin/island-ctl"
 install -m 755 "$here/scripts/herdr-open" "$share/herdr-open"
 ln -sfn "$share/herdr-open" "$bin/herdr-open"
+install -m 755 "$here/scripts/devbox-open" "$share/devbox-open"
+ln -sfn "$share/devbox-open" "$bin/devbox-open"
 case ":$PATH:" in *":$bin:"*) ;; *) echo "  note: $bin is not on your PATH" ;; esac
 
 say "Starting the daemon (systemd user service $unit)"
@@ -124,6 +128,20 @@ MimeType=x-scheme-handler/herdr;
 EOF
 command -v update-desktop-database >/dev/null && update-desktop-database "$apps" >/dev/null 2>&1 || true
 command -v xdg-mime >/dev/null && xdg-mime default "$opener" x-scheme-handler/herdr || true
+
+say "Registering devbox-open for devbox:// links (the hub's Terminal button)"
+cat >"$apps/$boxopener" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Devbox session
+Comment=Open a devbox:// link in a terminal attached to that session's tmux pane
+Exec=$bin/devbox-open %u
+NoDisplay=true
+Terminal=false
+MimeType=x-scheme-handler/devbox;
+EOF
+command -v update-desktop-database >/dev/null && update-desktop-database "$apps" >/dev/null 2>&1 || true
+command -v xdg-mime >/dev/null && xdg-mime default "$boxopener" x-scheme-handler/devbox || true
 
 say "Adding the island's hooks to Claude Code"
 "$bin/island-hook" --install-hooks "${hook_args[@]}"
